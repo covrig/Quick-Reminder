@@ -57,6 +57,19 @@
   at.addEventListener('change', onDateChange); // some Android pickers only fire change
   updateHint();
 
+  // Launched from the icon shortcuts (?to=work&when=now) or the Android share sheet
+  // (?title=&text=&url=). This only pre-fills the form; nothing is sent until you tap Send.
+  (function applyLaunchParams() {
+    if (!location.search) return;
+    var p = Util.parseLaunch(location.search, presets.map(function (x) { return x.id; }));
+    if (p.to) f.t.value = p.to;
+    if (p.when) { f.p.value = p.when; at.value = ''; }
+    if (p.subject) subject.value = p.subject;
+    if (p.body) msg.value = p.body;
+    updateHint();
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  })();
+
   var resetTimer;
   function fail(text) { btn.textContent = 'Send'; st.className = 'err'; st.textContent = text; }
 
@@ -67,9 +80,8 @@
     if (!subject.value.trim() && !msg.value.trim()) {
       st.className = 'err'; st.textContent = 'Enter a subject or details'; subject.focus(); return;
     }
-    // Capitalise the first letter of the subject if the user didn't.
-    var s = subject.value.trim();
-    if (s) subject.value = s.charAt(0).toLocaleUpperCase() + s.slice(1);
+    // Capitalise the first letter of the subject if the user didn't (links are left alone).
+    subject.value = Util.capitalizeSubject(subject.value);
     var cfg = loadCfg();
     if (!cfg) { showSetup('Enter your URL and token first.'); return; }
     clearTimeout(resetTimer);

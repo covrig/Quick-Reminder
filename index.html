@@ -42,17 +42,13 @@
   .seg { display:grid; gap:8px; }
   .seg.two { grid-template-columns:1fr 1fr; }
   .seg.chips { grid-template-columns:repeat(3, 1fr); }
-  /* Every button has its own colour (--base): a light tint plus a coloured corner when idle,
-     solid colour when selected. */
+  /* Buttons are plain until selected; a selected button turns solid in its own colour (--base). */
   .seg label { position:relative; --c:var(--base, #1a73e8); }
   @media (prefers-color-scheme: dark) { .seg label { --c:color-mix(in srgb, var(--base, #1a73e8) 62%, white); } }
   .seg input { position:absolute; opacity:0; inset:0; }
   .seg span { display:flex; align-items:center; justify-content:center; min-height:48px; padding:8px;
-              text-align:center; border-radius:12px;
-              border:1px solid color-mix(in srgb, var(--c) 45%, transparent);
-              background-color:color-mix(in srgb, var(--c) 12%, transparent);
-              background-image:linear-gradient(135deg, var(--c) 0 12px, transparent 12px); }
-  .seg input:checked + span { background-color:var(--c); background-image:none; color:#fff; border-color:var(--c); }
+              text-align:center; border-radius:12px; border:1px solid var(--border); }
+  .seg input:checked + span { background-color:var(--c); color:#fff; border-color:var(--c); }
   @media (prefers-color-scheme: dark) { .seg input:checked + span { color:#000; } }
   .seg input:focus-visible + span { outline:2px solid var(--c); outline-offset:2px; }
   /* Android shows nothing in an empty datetime field, so draw our own placeholder. */

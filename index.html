@@ -33,7 +33,9 @@
     border:1px solid var(--border); border-radius:12px; }
   input[type=datetime-local] { text-align:center; }
   input[type=datetime-local]::-webkit-date-and-time-value { text-align:center; }
-  textarea { height:clamp(96px, 16dvh, 220px); resize:vertical; margin-top:8px; }
+  /* Details start collapsed to one line, grow when focused or when they hold text. */
+  textarea { height:48px; resize:none; margin-top:8px; overflow:hidden; transition:height .15s ease; }
+  textarea:focus, textarea:not(:placeholder-shown) { height:clamp(110px, 20dvh, 240px); overflow:auto; resize:vertical; }
   .group { margin-top:16px; }
   .group.first { margin:0 0 20px; }
   .group > .lbl { display:block; font-size:.85em; color:var(--muted); margin-bottom:6px; }
@@ -78,8 +80,8 @@
   <div class="group first">
     <span class="lbl">Send to</span>
     <div class="seg two" role="radiogroup" aria-label="Send to">
-      <label><input type="radio" name="t" value="work" checked><span>Work</span></label>
-      <label><input type="radio" name="t" value="personal"><span>Personal</span></label>
+      <label><input type="radio" name="t" value="personal" checked><span>Personal</span></label>
+      <label><input type="radio" name="t" value="work"><span>Work</span></label>
     </div>
   </div>
 
@@ -153,6 +155,10 @@
   // Picking a preset clears the calendar; picking a date deselects the presets.
   f.querySelectorAll('input[name=p]').forEach(function (r) {
     r.addEventListener('change', function () { at.value = ''; updateHint(); });
+  });
+  // Switching to Work puts the time back to Now.
+  document.querySelector('input[name=t][value=work]').addEventListener('change', function () {
+    at.value = ''; f.p.value = 'now'; updateHint();
   });
   at.addEventListener('input', function () {
     if (at.value) f.querySelectorAll('input[name=p]').forEach(function (r) { r.checked = false; });

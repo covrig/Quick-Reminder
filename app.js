@@ -7,7 +7,15 @@
       subject = document.getElementById('subject'), chips = document.getElementById('chips'),
       dt = document.getElementById('dt');
 
-  var presets = Presets.DEFAULTS;
+  // Time buttons come from the settings text saved on this phone (falls back to the defaults).
+  function loadPresetText() {
+    try { return localStorage.getItem('qr_presets'); } catch (e) { return null; }
+  }
+  function loadPresets() {
+    var t = loadPresetText(), r = t === null ? null : Presets.fromText(t);
+    return r && r.ok ? r.presets : Presets.DEFAULTS;
+  }
+  var presets = loadPresets();
 
   // Time buttons. Built with the DOM API (no inline styles/HTML) so a strict CSP works.
   function renderChips() {
@@ -112,7 +120,8 @@
 
   // ---- Settings: URL + token live only in this phone's localStorage ----
   var setup = document.getElementById('setup'), cfgUrl = document.getElementById('cfgUrl'),
-      cfgToken = document.getElementById('cfgToken'), cfgMsg = document.getElementById('cfgMsg');
+      cfgToken = document.getElementById('cfgToken'), cfgMsg = document.getElementById('cfgMsg'),
+      cfgPresets = document.getElementById('cfgPresets');
   function loadCfg() {
     try {
       var u = localStorage.getItem('qr_url'), k = localStorage.getItem('qr_token');
@@ -128,6 +137,8 @@
     var c = loadCfg(); cfgUrl.value = c ? c.url : ''; cfgToken.value = '';
     cfgToken.placeholder = c ? 'Secret token (leave empty to keep)' : 'Secret token';
     cfgToken.required = !c;
+    var pt = loadPresetText(); // a damaged saved value shows the defaults instead
+    cfgPresets.value = pt !== null && Presets.fromText(pt).ok ? pt : Presets.DEFAULT_TEXT;
     cfgUrl.focus();
   }
   function showForm() { setup.hidden = true; f.hidden = false; subject.focus(); }
@@ -137,12 +148,23 @@
     var url = cfgUrl.value.trim(), c = loadCfg(), token = cfgToken.value.trim() || (c && c.token) || '';
     if (!validUrl(url)) { cfgMsg.textContent = 'URL must be https://script.google.com/…'; return; }
     if (token.length < 24) { cfgMsg.textContent = 'Token looks too short.'; return; }
-    try { localStorage.setItem('qr_url', url); localStorage.setItem('qr_token', token); }
-    catch (err) { cfgMsg.textContent = 'Could not save on this device.'; return; }
+    var pr = Presets.fromText(cfgPresets.value);
+    if (!pr.ok) { cfgMsg.textContent = pr.error; return; } // nothing is saved until everything is valid
+    try {
+      localStorage.setItem('qr_url', url); localStorage.setItem('qr_token', token);
+      if (cfgPresets.value.trim() === Presets.DEFAULT_TEXT) localStorage.removeItem('qr_presets');
+      else localStorage.setItem('qr_presets', cfgPresets.value);
+    } catch (err) { cfgMsg.textContent = 'Could not save on this device.'; return; }
+    presets = pr.presets; renderChips(); at.value = ''; updateHint();
     showForm();
   });
+  document.getElementById('cfgReset').addEventListener('click', function () {
+    cfgPresets.value = Presets.DEFAULT_TEXT;
+    cfgMsg.textContent = 'Defaults restored. Tap Save to keep them.';
+  });
   document.getElementById('cfgClear').addEventListener('click', function () {
-    try { localStorage.removeItem('qr_url'); localStorage.removeItem('qr_token'); } catch (e) {}
+    try { ['qr_url', 'qr_token', 'qr_presets'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+    presets = Presets.DEFAULTS; renderChips(); at.value = ''; updateHint();
     showSetup('Settings removed.');
   });
   if (!loadCfg()) showSetup('First time here: enter your details.');

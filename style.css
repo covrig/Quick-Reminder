@@ -16,6 +16,11 @@ h1 { font-size:1.25em; margin:0; }
 #setup[hidden], #f[hidden] { display:none; }
 #setup p { color:var(--muted); font-size:.9em; margin:0 0 12px; }
 #setup input { margin-bottom:8px; }
+#setup .lbl { display:block; font-size:.85em; color:var(--muted); margin-bottom:6px; }
+#cfgPresets { height:auto; margin:0 0 8px; resize:vertical; font:.95em/1.5 ui-monospace, monospace; }
+#cfgHelp { margin:0 0 4px; }
+#setup code { font-family:ui-monospace, monospace; background:color-mix(in srgb, var(--muted) 18%, transparent); padding:0 4px; border-radius:4px; }
+button.secondary { background:transparent; color:var(--fg); border:1px solid var(--border); }
 #cfgClear { margin-top:8px; background:transparent; color:var(--err); border:1px solid var(--border); }
 #cfgMsg { min-height:1.4em; margin-top:12px; text-align:center; color:var(--muted); }
 textarea, input[type=text], input[type=url], input[type=password], input[type=datetime-local] {

@@ -1,7 +1,7 @@
 // Network-first: always loads the newest files when online, falls back to the cached shell
 // when offline. Sending an email still needs a connection.
 var CACHE = 'quick-reminder-v1';
-var FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+var FILES = ['./', 'index.html', 'style.css', 'app.js', 'presets.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }));

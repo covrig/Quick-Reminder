@@ -8,64 +8,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
 <title>Quick Reminder</title>
-<style>
-  :root { --bg:#fff; --fg:#1d1d1f; --muted:#6b7280; --accent:#1a73e8; --border:#d1d5db; --err:#d93025; --work:#d9534f; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#000; --fg:#f1f1f1; --muted:#9ca3af; --accent:#8ab4f8; --border:#3a3a3a; --err:#f28b82; --work:#f28b82; }
-  }
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
-  body { margin:0; min-height:100dvh; background:var(--bg); color:var(--fg);
-         font:clamp(16px, 4vw, 18px)/1.4 system-ui, sans-serif;
-         padding:max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-                 max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
-  main { max-width:560px; margin-inline:auto; }
-  header { display:flex; align-items:center; justify-content:space-between; margin:0 0 12px; }
-  h1 { font-size:1.25em; margin:0; }
-  #gear { width:48px; min-height:48px; margin:0; padding:0; background:transparent; color:var(--muted);
-          border:1px solid var(--border); font-size:1.2em; }
-  #setup[hidden], #f[hidden] { display:none; }
-  #setup p { color:var(--muted); font-size:.9em; margin:0 0 12px; }
-  #setup input { margin-bottom:8px; }
-  textarea, input[type=text], input[type=url], input[type=password], input[type=datetime-local] {
-    width:100%; min-height:48px; padding:12px; font:inherit; color:inherit; background:transparent;
-    border:1px solid var(--border); border-radius:12px; }
-  input[type=datetime-local] { text-align:center; }
-  input[type=datetime-local]::-webkit-date-and-time-value { text-align:center; }
-  /* Details start collapsed to one line, grow when focused or when they hold text. */
-  textarea { height:48px; resize:none; margin-top:8px; overflow:hidden; transition:height .15s ease; }
-  textarea:focus, textarea:not(:placeholder-shown) { height:clamp(110px, 20dvh, 240px); overflow:auto; resize:vertical; }
-  .group { margin-top:16px; }
-  .group.first { margin:0 0 20px; }
-  .group > .lbl { display:block; font-size:.85em; color:var(--muted); margin-bottom:6px; }
-  .seg { display:grid; gap:8px; }
-  .seg.two { grid-template-columns:1fr 1fr; }
-  .seg.chips { grid-template-columns:repeat(3, 1fr); }
-  /* Buttons are plain until selected; a selected button turns solid in its own colour (--base). */
-  .seg label { position:relative; --c:var(--base, #1a73e8); }
-  @media (prefers-color-scheme: dark) { .seg label { --c:color-mix(in srgb, var(--base, #1a73e8) 62%, white); } }
-  .seg input { position:absolute; opacity:0; inset:0; }
-  .seg span { display:flex; align-items:center; justify-content:center; min-height:48px; padding:8px;
-              text-align:center; border-radius:12px; border:1px solid var(--border); }
-  .seg input:checked + span { background-color:var(--c); color:#fff; border-color:var(--c); }
-  @media (prefers-color-scheme: dark) { .seg input:checked + span { color:#000; } }
-  .seg input:focus-visible + span { outline:2px solid var(--c); outline-offset:2px; }
-  /* Android shows nothing in an empty datetime field, so draw our own placeholder. */
-  .dt { position:relative; }
-  .dt .ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-            color:var(--muted); pointer-events:none; }
-  .dt.filled .ph { display:none; }
-  .dt:not(.filled) input:not(:focus)::-webkit-datetime-edit { opacity:0; }
-  #when { margin-top:8px; font-size:.9em; color:var(--muted); min-height:1.4em; text-align:center; }
-  button { width:100%; min-height:52px; margin:16px 0 0; padding:14px; font:inherit; font-weight:600;
-           color:#fff; background:var(--accent); border:0; border-radius:12px; }
-  @media (prefers-color-scheme: dark) { button { color:#000; } }
-  button:disabled { opacity:.6; }
-  #status { margin:12px 0 0; text-align:center; color:var(--muted); }
-  #status:empty { display:none; }
-  #status.err { color:var(--err); }
-</style>
 </head>
 <body>
 <main>
@@ -79,16 +23,16 @@
   <input type="url" id="cfgUrl" placeholder="Web app URL (https://script.google.com/macros/s/…/exec)" required>
   <input type="password" id="cfgToken" placeholder="Secret token" autocomplete="off" required>
   <button type="submit">Save</button>
-  <button type="button" id="cfgClear" style="margin-top:8px;background:transparent;color:var(--err);border:1px solid var(--border)">Forget this phone's settings</button>
-  <div id="cfgMsg" role="status" style="min-height:1.4em;margin-top:12px;text-align:center;color:var(--muted)"></div>
+  <button type="button" id="cfgClear">Forget this phone's settings</button>
+  <div id="cfgMsg" role="status"></div>
 </form>
 
 <form id="f">
   <div class="group first">
     <span class="lbl">Send to</span>
     <div class="seg two" role="radiogroup" aria-label="Send to">
-      <label style="--base:#1a73e8"><input type="radio" name="t" value="personal" checked><span>Personal</span></label>
-      <label style="--base:#d9534f"><input type="radio" name="t" value="work"><span>Work</span></label>
+      <label class="c-personal"><input type="radio" name="t" value="personal" checked><span>Personal</span></label>
+      <label class="c-work"><input type="radio" name="t" value="work"><span>Work</span></label>
     </div>
   </div>
 
@@ -102,7 +46,7 @@
   <div class="group">
     <span class="lbl">When</span>
     <div class="seg chips" id="chips" role="radiogroup" aria-label="When"></div>
-    <label class="lbl" for="at" style="margin-top:12px">Or pick date and time</label>
+    <label class="lbl spaced" for="at">Or pick date and time</label>
     <div class="dt" id="dt">
       <input type="datetime-local" id="at">
       <span class="ph" aria-hidden="true">Tap to pick date and time</span>
@@ -111,153 +55,7 @@
   </div>
 </form>
 </main>
-<script>
-  var f = document.getElementById('f'), st = document.getElementById('status'),
-      btn = document.getElementById('btn'), at = document.getElementById('at'),
-      whenEl = document.getElementById('when'), msg = document.getElementById('msg'),
-      subject = document.getElementById('subject');
-
-  // Resolve a preset to a Date, or null for "now". Uses the phone's local time zone.
-  function nextAt(h, m) {
-    var d = new Date(); d.setHours(h, m, 0, 0);
-    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
-    return d;
-  }
-  // Presets: clock times mean "next occurrence"; hours mean "from now".
-  var PRESETS = [
-    { id: 'now',  label: 'Now',     color: '#1e8e4e' },
-    { id: '0830', label: '8:30 AM', color: '#b7791f', h: 8,  m: 30 },
-    { id: '0930', label: '9:30 AM', color: '#e0701b', h: 9,  m: 30 },
-    { id: '1500', label: '3:00 PM', color: '#0f9d9a', h: 15, m: 0 },
-    { id: '1800', label: '6:00 PM', color: '#4f5bd5', h: 18, m: 0 },
-    { id: '1900', label: '7:00 PM', color: '#9b51d0', h: 19, m: 0 },
-    { id: '1h',   label: '1 h',     color: '#d6459a', hours: 1 },
-    { id: '3h',   label: '3 h',     color: '#8a6d3b', hours: 3 },
-    { id: '6h',   label: '6 h',     color: '#5f6b7a', hours: 6 }
-  ];
-  function resolve(id) {
-    var p = PRESETS.filter(function (x) { return x.id === id; })[0];
-    if (!p || p.id === 'now') return null;
-    return p.hours ? new Date(Date.now() + p.hours * 3600e3) : nextAt(p.h, p.m);
-  }
-  document.getElementById('chips').innerHTML = PRESETS.map(function (p, i) {
-    return '<label style="--base:' + p.color + '"><input type="radio" name="p" value="' + p.id + '"' + (i === 0 ? ' checked' : '') +
-           '><span>' + p.label + '</span></label>';
-  }).join('');
-  function target() { // returns {date|null, error}
-    if (at.value) {
-      var d = new Date(at.value);
-      return isNaN(d) ? { error: 'Invalid date' } : { date: d };
-    }
-    return { date: resolve(f.p.value) };
-  }
-  function fmt(d) {
-    var far = d.getTime() - Date.now() > 6 * 864e5;
-    return d.toLocaleString([], far
-      ? { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }
-      : { weekday:'short', hour:'numeric', minute:'2-digit' });
-  }
-  function updateHint() {
-    document.getElementById('dt').classList.toggle('filled', !!at.value);
-    var t = target();
-    whenEl.textContent = t.error ? t.error : (t.date ? 'Will send: ' + fmt(t.date) : 'Will send immediately');
-  }
-
-  // Picking a preset clears the calendar; picking a date deselects the presets.
-  f.querySelectorAll('input[name=p]').forEach(function (r) {
-    r.addEventListener('change', function () { at.value = ''; updateHint(); });
-  });
-  // Switching to Work puts the time back to Now.
-  document.querySelector('input[name=t][value=work]').addEventListener('change', function () {
-    at.value = ''; f.p.value = 'now'; updateHint();
-  });
-  function onDateChange() {
-    if (at.value) f.querySelectorAll('input[name=p]').forEach(function (r) { r.checked = false; });
-    else f.p.value = 'now';
-    updateHint();
-  }
-  at.addEventListener('input', onDateChange);
-  at.addEventListener('change', onDateChange); // some Android pickers only fire change
-  updateHint();
-
-  f.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var t = target();
-    if (t.error) { st.className = 'err'; st.textContent = t.error; return; }
-    if (!subject.value.trim() && !msg.value.trim()) {
-      st.className = 'err'; st.textContent = 'Enter a subject or details'; subject.focus(); return;
-    }
-    // Capitalise the first letter of the subject if the user didn't.
-    var s = subject.value.trim();
-    if (s) subject.value = s.charAt(0).toLocaleUpperCase() + s.slice(1);
-    var cfg = loadCfg();
-    if (!cfg) { showSetup('Enter your URL and token first.'); return; }
-    clearTimeout(resetTimer);
-    btn.disabled = true; st.className = ''; st.textContent = ''; btn.textContent = 'Sending…';
-    var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, 25000);
-    // text/plain keeps this a "simple" cross-origin request (no preflight); the token travels in the body.
-    fetch(cfg.url, {
-      method: 'POST', redirect: 'follow', signal: ctl.signal,
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ token: cfg.token, subject: subject.value, body: msg.value,
-                             target: f.t.value, sendAt: t.date ? t.date.toISOString() : '' })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        btn.disabled = false;
-        if (!res || !res.ok) { fail(res && res.error ? res.error : 'Unexpected reply'); return; }
-        btn.textContent = res.status + ' ✓';
-        resetTimer = setTimeout(function () { btn.textContent = 'Send'; }, 3000);
-        subject.value = ''; msg.value = ''; at.value = ''; f.p.value = 'now'; updateHint(); subject.focus();
-      })
-      .catch(function (err) {
-        btn.disabled = false;
-        fail(err && err.name === 'AbortError' ? 'Timed out. Not confirmed, check before resending.'
-                                              : 'No connection. Not sent.');
-      })
-      .finally(function () { clearTimeout(timer); });
-  });
-  var resetTimer;
-  function fail(text) { btn.textContent = 'Send'; st.className = 'err'; st.textContent = text; }
-
-  // ---- Settings: URL + token live only in this phone's localStorage ----
-  var setup = document.getElementById('setup'), cfgUrl = document.getElementById('cfgUrl'),
-      cfgToken = document.getElementById('cfgToken'), cfgMsg = document.getElementById('cfgMsg');
-  function loadCfg() {
-    try {
-      var u = localStorage.getItem('qr_url'), k = localStorage.getItem('qr_token');
-      return u && k ? { url: u, token: k } : null;
-    } catch (e) { return null; }
-  }
-  function validUrl(u) {
-    try { var x = new URL(u); return x.protocol === 'https:' && x.hostname === 'script.google.com'; }
-    catch (e) { return false; }
-  }
-  function showSetup(note) {
-    setup.hidden = false; f.hidden = true; cfgMsg.textContent = note || '';
-    var c = loadCfg(); cfgUrl.value = c ? c.url : ''; cfgToken.value = '';
-    cfgToken.placeholder = c ? 'Secret token (leave empty to keep)' : 'Secret token';
-    cfgToken.required = !c;
-    cfgUrl.focus();
-  }
-  function showForm() { setup.hidden = true; f.hidden = false; subject.focus(); }
-  document.getElementById('gear').addEventListener('click', function () { setup.hidden ? showSetup() : (loadCfg() ? showForm() : 0); });
-  setup.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var url = cfgUrl.value.trim(), c = loadCfg(), token = cfgToken.value.trim() || (c && c.token) || '';
-    if (!validUrl(url)) { cfgMsg.textContent = 'URL must be https://script.google.com/…'; return; }
-    if (token.length < 24) { cfgMsg.textContent = 'Token looks too short.'; return; }
-    try { localStorage.setItem('qr_url', url); localStorage.setItem('qr_token', token); }
-    catch (err) { cfgMsg.textContent = 'Could not save on this device.'; return; }
-    showForm();
-  });
-  document.getElementById('cfgClear').addEventListener('click', function () {
-    try { localStorage.removeItem('qr_url'); localStorage.removeItem('qr_token'); } catch (e) {}
-    showSetup('Settings removed.');
-  });
-  if (!loadCfg()) showSetup('First time here: enter your details.');
-
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
-</script>
+<script src="presets.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

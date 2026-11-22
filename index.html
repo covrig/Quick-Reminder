@@ -25,11 +25,15 @@
   <p>Paste your Apps Script web app URL and your secret token. They are stored only on this phone.</p>
   <input type="url" id="cfgUrl" placeholder="Web app URL (https://script.google.com/macros/s/…/exec)" required>
   <input type="password" id="cfgToken" placeholder="Secret token" autocomplete="off" required>
+  <label class="lbl spaced" for="cfgPrefix">Text before the subject (optional)</label>
+  <input type="text" id="cfgPrefix" maxlength="30" placeholder="e.g. [Reminder] or [Update]" autocomplete="off" autocapitalize="off" aria-describedby="cfgPrefixHelp">
+  <p id="cfgPrefixHelp">Put in front of every subject, so "Call dentist" is sent as "[Reminder] Call dentist". Leave empty for none.</p>
   <label class="lbl spaced" for="cfgPresets">Time buttons, one per line</label>
   <textarea id="cfgPresets" rows="9" spellcheck="false" autocapitalize="off" aria-describedby="cfgHelp"></textarea>
   <p id="cfgHelp">Examples: <code>8:30</code>, <code>3:00 pm</code>, <code>18:00</code> (next time it is that time), <code>+1h</code>, <code>+90m</code> (from now). Up to 8. "Now" is always first.</p>
   <button type="button" id="cfgReset" class="secondary">Reset time buttons to defaults</button>
   <button type="submit">Save</button>
+  <button type="button" id="cfgClose" class="secondary">Close without saving</button>
   <button type="button" id="cfgClear">Forget this phone's settings</button>
   <div id="cfgMsg" role="status"></div>
 </form>

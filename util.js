@@ -47,8 +47,32 @@
     return out;
   }
 
+  var MAX_PREFIX = 30;
+
+  // Text saved in settings to go in front of every subject, e.g. "[Reminder]". One line, trimmed, max 30 chars.
+  function sanitizePrefix(s) {
+    return String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_PREFIX).trim();
+  }
+
+  /**
+   * Subject that is actually sent.
+   *  - no prefix: the subject as typed ('' is fine, the server then builds one from the details)
+   *  - prefix + subject: "[Update] Call dentist" (not repeated if the subject already starts with it)
+   *  - prefix + no subject: prefix + the first line of the details (50 chars)
+   * Never longer than MAX_SUBJECT.
+   */
+  function buildSubject(prefix, subject, body) {
+    prefix = sanitizePrefix(prefix);
+    subject = String(subject == null ? '' : subject).trim();
+    if (!prefix) return subject.slice(0, MAX_SUBJECT);
+    if (subject && subject.toLowerCase().indexOf(prefix.toLowerCase()) === 0) return subject.slice(0, MAX_SUBJECT);
+    var core = subject || String(body == null ? '' : body).trim().split('\n')[0].trim().slice(0, 50);
+    return core ? (prefix + ' ' + core).slice(0, MAX_SUBJECT) : '';
+  }
+
   var api = { capitalizeSubject: capitalizeSubject, parseLaunch: parseLaunch,
-              MAX_SUBJECT: MAX_SUBJECT, MAX_BODY: MAX_BODY };
+              sanitizePrefix: sanitizePrefix, buildSubject: buildSubject,
+              MAX_SUBJECT: MAX_SUBJECT, MAX_BODY: MAX_BODY, MAX_PREFIX: MAX_PREFIX };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Util = api;
 })(typeof self !== 'undefined' ? self : this);

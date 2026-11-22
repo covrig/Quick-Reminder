@@ -78,8 +78,19 @@
     try { history.replaceState(null, '', location.pathname); } catch (e) {}
   })();
 
+  // Optional text put in front of every subject ("[Reminder]"), set in the settings.
+  function loadPrefix() {
+    try { return Util.sanitizePrefix(localStorage.getItem('qr_prefix')); } catch (e) { return ''; }
+  }
+  var prefix = loadPrefix();
+  // Keep prefix + subject within the server's subject limit.
+  function applyPrefixLimit() { subject.maxLength = Util.MAX_SUBJECT - (prefix ? prefix.length + 1 : 0); }
+  applyPrefixLimit();
+
   var resetTimer;
-  function fail(text) { btn.textContent = 'Send'; st.className = 'err'; st.textContent = text; }
+  function fail(text) {
+    btn.classList.remove('done'); btn.textContent = 'Send'; st.className = 'err'; st.textContent = text;
+  }
 
   f.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -93,21 +104,22 @@
     var cfg = loadCfg();
     if (!cfg) { showSetup('Enter your URL and token first.'); return; }
     clearTimeout(resetTimer);
+    btn.classList.remove('done');
     btn.disabled = true; st.className = ''; st.textContent = ''; btn.textContent = 'Sending…';
     var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, 25000);
     // text/plain keeps this a "simple" cross-origin request (no preflight); the token travels in the body.
     fetch(cfg.url, {
       method: 'POST', redirect: 'follow', signal: ctl.signal,
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ token: cfg.token, subject: subject.value, body: msg.value,
+      body: JSON.stringify({ token: cfg.token, subject: Util.buildSubject(prefix, subject.value, msg.value), body: msg.value,
                              target: f.t.value, sendAt: t.date ? t.date.toISOString() : '' })
     })
       .then(function (r) { return r.json(); })
       .then(function (res) {
         btn.disabled = false;
         if (!res || !res.ok) { fail(res && res.error ? res.error : 'Unexpected reply'); return; }
-        btn.textContent = res.status + ' ✓';
-        resetTimer = setTimeout(function () { btn.textContent = 'Send'; }, 3000);
+        btn.textContent = res.status + ' ✓'; btn.classList.add('done');
+        resetTimer = setTimeout(function () { btn.textContent = 'Send'; btn.classList.remove('done'); }, 3000);
         subject.value = ''; msg.value = ''; at.value = ''; f.p.value = 'now'; updateHint(); subject.focus();
       })
       .catch(function (err) {
@@ -121,7 +133,8 @@
   // ---- Settings: URL + token live only in this phone's localStorage ----
   var setup = document.getElementById('setup'), cfgUrl = document.getElementById('cfgUrl'),
       cfgToken = document.getElementById('cfgToken'), cfgMsg = document.getElementById('cfgMsg'),
-      cfgPresets = document.getElementById('cfgPresets');
+      cfgPresets = document.getElementById('cfgPresets'), cfgPrefix = document.getElementById('cfgPrefix'),
+      gear = document.getElementById('gear');
   function loadCfg() {
     try {
       var u = localStorage.getItem('qr_url'), k = localStorage.getItem('qr_token');
@@ -139,10 +152,21 @@
     cfgToken.required = !c;
     var pt = loadPresetText(); // a damaged saved value shows the defaults instead
     cfgPresets.value = pt !== null && Presets.fromText(pt).ok ? pt : Presets.DEFAULT_TEXT;
+    cfgPrefix.value = prefix;
+    // The top-right button becomes a close button while settings are open.
+    gear.textContent = '✕'; gear.setAttribute('aria-label', 'Close settings'); gear.title = 'Close settings';
     cfgUrl.focus();
   }
-  function showForm() { setup.hidden = true; f.hidden = false; subject.focus(); }
-  document.getElementById('gear').addEventListener('click', function () { setup.hidden ? showSetup() : (loadCfg() ? showForm() : 0); });
+  function showForm() {
+    setup.hidden = true; f.hidden = false;
+    gear.textContent = '⚙'; gear.setAttribute('aria-label', 'Settings'); gear.title = 'Settings';
+    subject.focus();
+  }
+  // Close = back to the form, throwing away unsaved edits. Works on first run too.
+  function closeSettings() { if (!setup.hidden) showForm(); }
+  gear.addEventListener('click', function () { setup.hidden ? showSetup() : closeSettings(); });
+  document.getElementById('cfgClose').addEventListener('click', closeSettings);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSettings(); });
   setup.addEventListener('submit', function (e) {
     e.preventDefault();
     var url = cfgUrl.value.trim(), c = loadCfg(), token = cfgToken.value.trim() || (c && c.token) || '';
@@ -150,12 +174,15 @@
     if (token.length < 24) { cfgMsg.textContent = 'Token looks too short.'; return; }
     var pr = Presets.fromText(cfgPresets.value);
     if (!pr.ok) { cfgMsg.textContent = pr.error; return; } // nothing is saved until everything is valid
+    var newPrefix = Util.sanitizePrefix(cfgPrefix.value);
     try {
       localStorage.setItem('qr_url', url); localStorage.setItem('qr_token', token);
       if (cfgPresets.value.trim() === Presets.DEFAULT_TEXT) localStorage.removeItem('qr_presets');
       else localStorage.setItem('qr_presets', cfgPresets.value);
+      if (newPrefix) localStorage.setItem('qr_prefix', newPrefix); else localStorage.removeItem('qr_prefix');
     } catch (err) { cfgMsg.textContent = 'Could not save on this device.'; return; }
     presets = pr.presets; renderChips(); at.value = ''; updateHint();
+    prefix = newPrefix; applyPrefixLimit();
     showForm();
   });
   document.getElementById('cfgReset').addEventListener('click', function () {
@@ -163,8 +190,9 @@
     cfgMsg.textContent = 'Defaults restored. Tap Save to keep them.';
   });
   document.getElementById('cfgClear').addEventListener('click', function () {
-    try { ['qr_url', 'qr_token', 'qr_presets'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+    try { ['qr_url', 'qr_token', 'qr_presets', 'qr_prefix'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
     presets = Presets.DEFAULTS; renderChips(); at.value = ''; updateHint();
+    prefix = ''; applyPrefixLimit();
     showSetup('Settings removed.');
   });
   if (!loadCfg()) showSetup('First time here: enter your details.');

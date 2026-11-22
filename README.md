@@ -102,10 +102,15 @@ Google also caps Gmail sending per day for the account. The script can only send
 
 ## Behaviour worth remembering
 
-- Details are optional. If the subject is empty, the subject is taken from the first line of the details. A subject-only email is sent with a single space as the body.
+- Details are optional. If the subject is empty (and no prefix is set), the server builds one: "Reminder: " plus the first line of the details. A subject-only email is sent with a single space as the body.
 - Clock buttons mean the *next* time that clock time occurs (after 8:30 AM has passed, "8:30 AM" means tomorrow). Hour/minute buttons (`+1h`) count from now. Switching to Work resets the time to Now.
 - The first letter of the subject is capitalised automatically, except when it starts with a link.
 - Times are worked out on the phone in its own time zone.
+
+### Settings screen (⚙)
+- Open with ⚙ in the top-right corner. While it is open that button turns into **✕** and closes it; "Close without saving" at the bottom and the Escape key do the same. Closing throws away edits that were not saved with **Save**.
+- **Text before the subject** (optional, up to 30 characters, e.g. `[Reminder]` or `[Update]`): added in front of every subject when sending, so "Call dentist" goes out as "[Reminder] Call dentist". It is not added again if the subject already starts with it. If you leave the subject empty, it is added to the first line of the details instead. The subject box shows only what you typed and its length limit shrinks to leave room for the prefix. Stored only on that phone; empty means none.
+- After a successful send the Send button turns **green** for 3 seconds ("Sent ✓" or "Scheduled ✓"), then returns to blue.
 
 ### Change the time buttons
 ⚙ → "Time buttons, one per line", then Save. Formats: `8:30`, `3:00 pm`, `18:00` (clock times) and `+1h`, `+90m` (from now). Up to 8 plus the fixed "Now". Anything it cannot read is rejected with the line number and nothing is saved. "Reset time buttons to defaults" restores the original list (8:30 AM, 9:30 AM, 3:00 PM, 6:00 PM, 7:00 PM, 1 h, 3 h, 6 h). The list is stored only on that phone.

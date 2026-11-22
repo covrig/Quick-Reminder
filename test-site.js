@@ -132,4 +132,34 @@ assert.strictEqual(xss.body, '<script>alert(1)</script>');
 assert.deepStrictEqual(U.parseLaunch('?%E0%A4%A', ids), {}, 'malformed query does not throw');
 assert.deepStrictEqual(U.parseLaunch('?title=%20%20&text=%20', ids), {}, 'blank values ignored');
 
+// --- sanitizePrefix ---
+assert.strictEqual(U.sanitizePrefix('[Reminder]'), '[Reminder]');
+assert.strictEqual(U.sanitizePrefix('  [Update]  '), '[Update]');
+assert.strictEqual(U.sanitizePrefix('[A]\n[B]'), '[A] [B]', 'line breaks become a space');
+assert.strictEqual(U.sanitizePrefix('a\t\tb'), 'a b');
+assert.strictEqual(U.sanitizePrefix('\u0000\u0007x\u007f'), 'x', 'control characters removed');
+assert.strictEqual(U.sanitizePrefix(''), '');
+assert.strictEqual(U.sanitizePrefix(null), '');
+assert.strictEqual(U.sanitizePrefix(undefined), '');
+assert.strictEqual(U.sanitizePrefix('x'.repeat(50)).length, 30);
+assert.strictEqual(U.sanitizePrefix('word '.repeat(10)).endsWith(' '), false, 'no trailing space after cutting');
+assert.strictEqual(U.sanitizePrefix('<b>Hi</b>'), '<b>Hi</b>', 'kept as plain text (it is only ever put in a mail subject)');
+
+// --- buildSubject ---
+assert.strictEqual(U.buildSubject('', 'Buy milk', ''), 'Buy milk', 'no prefix: unchanged');
+assert.strictEqual(U.buildSubject('', '', 'details only'), '', 'no prefix, no subject: server decides');
+assert.strictEqual(U.buildSubject('[Reminder]', 'Buy milk', ''), '[Reminder] Buy milk');
+assert.strictEqual(U.buildSubject('  [Update] ', '  Call dentist ', 'x'), '[Update] Call dentist');
+assert.strictEqual(U.buildSubject('[Update]', '[Update] Call', ''), '[Update] Call', 'not doubled');
+assert.strictEqual(U.buildSubject('[Update]', '[update] call', ''), '[update] call', 'not doubled, case-insensitive');
+assert.strictEqual(U.buildSubject('[Update]', '[Updates] x', ''), '[Update] [Updates] x', 'only an exact start counts');
+assert.strictEqual(U.buildSubject('[Update]', '', 'First line\nsecond line'), '[Update] First line', 'subject from details');
+assert.strictEqual(U.buildSubject('[Update]', '', 'x'.repeat(80)), '[Update] ' + 'x'.repeat(50));
+assert.strictEqual(U.buildSubject('[Update]', '', ''), '', 'nothing to send: stays empty');
+assert.strictEqual(U.buildSubject('[Update]', '   ', '  \n  '), '');
+assert.strictEqual(U.buildSubject('[Update]', null, null), '');
+assert.strictEqual(U.buildSubject('x'.repeat(30), 's'.repeat(300), '').length, 200, 'capped at the server limit');
+assert.strictEqual(U.buildSubject('', 's'.repeat(300), '').length, 200);
+assert.strictEqual(U.buildSubject('\n', 'Hi', ''), 'Hi', 'a prefix that is only whitespace counts as none');
+
 console.log('site tests passed');

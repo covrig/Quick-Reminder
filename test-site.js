@@ -29,10 +29,40 @@ assert.strictEqual(at(P.resolve(P.DEFAULTS, '0830', exact)), '2026,11,21,8,30,0'
 const nye = new Date(2026, 11, 31, 20, 0, 0).getTime();
 assert.strictEqual(at(P.resolve(P.DEFAULTS, '0830', nye)), '2027,1,1,8,30,0');
 
-// --- DEFAULTS are exactly the original nine buttons, ids and colours unchanged ---
+// --- DEFAULTS are exactly the original nine buttons (same ids), with the distinct colour palette ---
 assert.deepStrictEqual(P.DEFAULTS.map((p) => p.id), ['now', '0830', '0930', '1500', '1800', '1900', '1h', '3h', '6h']);
 assert.deepStrictEqual(P.DEFAULTS.map((p) => p.color),
-  ['#1e8e4e', '#b7791f', '#e0701b', '#0f9d9a', '#4f5bd5', '#9b51d0', '#d6459a', '#8a6d3b', '#5f6b7a']);
+  ['#1e8e4e', '#822b2b', '#c31dc3', '#171797', '#649717', '#1d81c3', '#329595', '#c31d70', '#ad811a']);
+
+// --- colours stay clearly different from each other (CIE76 ΔE) in light AND dark mode, and readable with white text ---
+{
+  const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const lab = (h) => {
+    const [r, g, b] = hex(h).map(lin);
+    const x = 0.4124 * r + 0.3576 * g + 0.1805 * b, y = 0.2126 * r + 0.7152 * g + 0.0722 * b, z = 0.0193 * r + 0.1192 * g + 0.9505 * b;
+    const fx = f(x / 0.95047), fy = f(y), fz = f(z / 1.08883);
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+  };
+  const dE = (a, b) => { const A = lab(a), B = lab(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); };
+  const lum = (h) => { const [r, g, b] = hex(h).map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const contrastWhite = (h) => 1.05 / (lum(h) + 0.05);
+  // same lightening the stylesheet applies in dark mode: color-mix(colour 62%, white)
+  const dark = (h) => '#' + hex(h).map((c) => Math.round(c * 0.62 + 255 * 0.38).toString(16).padStart(2, '0')).join('');
+  const cols = P.DEFAULTS.map((p) => p.color);
+  let minLight = 999, minDark = 999, pair = '';
+  for (let i = 0; i < cols.length; i++) for (let j = i + 1; j < cols.length; j++) {
+    const a = dE(cols[i], cols[j]), b = dE(dark(cols[i]), dark(cols[j]));
+    if (a < minLight) { minLight = a; pair = P.DEFAULTS[i].label + ' / ' + P.DEFAULTS[j].label; }
+    minDark = Math.min(minDark, b);
+  }
+  assert.ok(minLight >= 30, 'light-mode colours too similar: ' + pair + ' = ' + minLight.toFixed(1));
+  assert.ok(minDark >= 20, 'dark-mode colours too similar: ' + minDark.toFixed(1));
+  cols.forEach((c) => assert.ok(contrastWhite(c) >= 3.4, 'white text hard to read on ' + c));
+  // the colours must also stay away from the two recipient buttons (Personal blue, Work red)
+  cols.forEach((c) => { assert.ok(dE(c, '#1a73e8') >= 28, c + ' too close to Personal blue'); assert.ok(dE(c, '#d9534f') >= 26, c + ' too close to Work red'); });
+}
 
 // --- fromText: valid input ---
 const ft = (t) => P.fromText(t);
@@ -50,7 +80,7 @@ assert.deepStrictEqual(labels('\n  \n8:30\n\n'), ['Now', '8:30 AM'], 'blank line
 assert.deepStrictEqual(labels('8:30\r\n9:30'), ['Now', '8:30 AM', '9:30 AM'], 'windows line endings');
 assert.deepStrictEqual(ft(P.DEFAULT_TEXT).presets, P.DEFAULTS);
 // colours follow position
-assert.deepStrictEqual(ft('1:00\n2:00').presets.map((p) => p.color), ['#1e8e4e', '#b7791f', '#e0701b']);
+assert.deepStrictEqual(ft('1:00\n2:00').presets.map((p) => p.color), ['#1e8e4e', '#822b2b', '#c31dc3']);
 
 // --- fromText: errors carry the line number and never throw ---
 const err = (t) => { const r = ft(t); assert.strictEqual(r.ok, false, JSON.stringify(t)); return r.error; };

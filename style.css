@@ -3,7 +3,9 @@
   :root { --bg:#000; --fg:#f1f1f1; --muted:#9ca3af; --accent:#8ab4f8; --border:#3a3a3a; --err:#f28b82; --ok:#6fcf97; }
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+/* html paints the background itself (not only body), so nothing transparent shows through
+   when the window resizes, e.g. while the keyboard slides up. */
+html { -webkit-text-size-adjust: 100%; background:var(--bg); color-scheme:light dark; }
 body { margin:0; min-height:100dvh; background:var(--bg); color:var(--fg);
        font:clamp(16px, 4vw, 18px)/1.4 system-ui, sans-serif;
        padding:max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))

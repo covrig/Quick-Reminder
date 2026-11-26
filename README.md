@@ -61,7 +61,11 @@ git add -A && git commit -m "describe change" && git push origin main
 
 GitHub Pages rebuilds in about a minute. On the phone, close and reopen the app once. No change is needed in Apps Script.
 
-Changes to `manifest.webmanifest` (name, icon, shortcuts, share target) are picked up by Android on its own schedule, up to about a day. To force it, uninstall the app and install it again.
+Changes to `manifest.webmanifest` (name, icon, shortcuts, share target, colours) are picked up by Android on its own schedule, up to about a day. To force it, uninstall the app and install it again.
+
+**Colours must match the page.** The manifest's `background_color` / `theme_color` (black) and the two `theme-color` meta tags in `index.html` (white in light mode, black in dark mode) are the colours Android paints around the page, for example in the strip that appears while the keyboard slides up. When they were blue, that blue flashed under the keyboard. The manifest can hold only one colour, so it uses the dark one. If the page background (`--bg` in `style.css`) ever changes, change all of these to match.
+
+**Button colours:** the 8 time-button colours live in `PALETTE` in `presets.js`. `node test-site.js` fails if two of the nine buttons become too similar (in light or dark mode) or if white text on a button gets hard to read, so check the result there after changing a colour.
 
 ## Redeploy: change the backend (`backend/Code.gs`)
 

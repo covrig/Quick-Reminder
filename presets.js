@@ -4,7 +4,8 @@
 
   var MAX_ENTRIES = 8;
   // Colour of the button at each position after "Now".
-  var PALETTE = ['#b7791f', '#e0701b', '#0f9d9a', '#4f5bd5', '#9b51d0', '#d6459a', '#8a6d3b', '#5f6b7a'];
+  // Chosen so any two buttons stay far apart in colour in light and dark mode (checked in test-site.js).
+  var PALETTE = ['#822b2b', '#c31dc3', '#171797', '#649717', '#1d81c3', '#329595', '#c31d70', '#ad811a'];
   var NOW = { id: 'now', label: 'Now', color: '#1e8e4e' };
 
   // What the settings box contains by default. One entry per line.

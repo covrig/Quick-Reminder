@@ -51,6 +51,8 @@ README.md              this file
 
 If you add a new file to the site, add it to `FILES` in `sw.js` and, if it is a script, to `index.html`.
 
+**Why the scripts are in `<head>` as `<script defer blocking="render">`:** the time buttons are built by `app.js`. With the scripts at the end of `<body>`, the first paint on a slow launch showed the page without the buttons, and everything below them jumped down 160 px when the script ran (measured: layout shift 0.0247, date field moving from y=402 to y=562). `defer` runs the scripts after the page is parsed and `blocking="render"` makes Chrome wait for them before the first paint, so nothing moves afterwards. Do not move them back to the end of `<body>`. Any new script that changes the layout should be added the same way. Cost: first paint is about 30–70 ms later in a throttled test.
+
 ## Redeploy: change the front end (form, colours, buttons)
 
 ```

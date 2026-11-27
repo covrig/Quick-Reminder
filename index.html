@@ -15,6 +15,12 @@
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
+<!-- The scripts build the time buttons. "defer" runs them after the page is parsed; blocking="render" holds the
+     first paint until they have run, so the buttons are already there and nothing jumps down when they appear.
+     Do not move these back to the end of <body>. -->
+<script defer blocking="render" src="util.js"></script>
+<script defer blocking="render" src="presets.js"></script>
+<script defer blocking="render" src="app.js"></script>
 <title>Quick Reminder</title>
 </head>
 <body>
@@ -68,8 +74,5 @@
   </div>
 </form>
 </main>
-<script src="util.js"></script>
-<script src="presets.js"></script>
-<script src="app.js"></script>
 </body>
 </html>

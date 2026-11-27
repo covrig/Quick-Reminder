@@ -124,8 +124,11 @@
       })
       .catch(function (err) {
         btn.disabled = false;
-        fail(err && err.name === 'AbortError' ? 'Timed out. Not confirmed, check before resending.'
-                                              : 'No connection. Not sent.');
+        var n = err && err.name;
+        // A reply that is not JSON (e.g. a Google error page) means the server was reached: the mail may have been sent.
+        fail(n === 'AbortError' ? 'Timed out. Not confirmed, check before resending.'
+           : n === 'SyntaxError' ? 'Unexpected reply. Not confirmed, check your inbox before resending.'
+           : 'No connection. Not sent.');
       })
       .finally(function () { clearTimeout(timer); });
   });

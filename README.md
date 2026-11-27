@@ -126,6 +126,18 @@ Google also caps Gmail sending per day for the account. The script can only send
 - **Shortcuts:** long-press the app icon for "Personal now" and "Work now". They open the form with that recipient and Now selected.
 - Both come from `manifest.webmanifest` and need the app to be (re)installed after that file changes.
 
+## Service worker and caching (why the app sometimes showed an old or half-updated version)
+
+GitHub Pages sends `Cache-Control: max-age=600` on every file, so for 10 minutes the browser considers a file "fresh" and does not ask the server. With a plain `fetch()` in the service worker this was measured (cold launch after a deploy, simulated in headless Chromium with a persistent profile):
+- the **first launch after a deploy showed the old version** (old HTML, JS and CSS);
+- **pull-to-refresh then produced a mix**: new `index.html` with an old `app.js` and `style.css` (a new page whose script did nothing, which is how a new settings section stayed empty).
+
+Two Chrome behaviours cause it: *navigation preload* (Chrome answers the page request from the HTTP cache while the worker starts) and the *in-page memory cache* (on reload it reuses scripts/CSS it still thinks are fresh). `sw.js` works around both: navigations fetch a new `Request`, every response is handed to the page with `Cache-Control: no-cache`, and the offline copy is stored with `cache: 'reload'`. After the change, HTML, JS and CSS were always the same version on cold launch, on reload, and offline (start URL `/` and `/index.html`; checked with the version-marker test described below).
+- The cache is named `quick-reminder-v2`; change the name only if you want to force every phone to drop its stored copy.
+- Offline the app opens from the last stored copy. Only one page is stored (share/shortcut links with `?title=…` are not kept, so shared text is not saved on the phone).
+- **Rolling out a change to `sw.js` itself:** the phone first has to install the new worker (it checks on launch), so the first launch after that deploy can still show the old version. Launch the app twice.
+- Method if you need to re-test: serve a copy of the site with `Cache-Control: max-age=600`, put a version marker in `index.html`, `app.js` and `style.css`, launch with a persistent Chromium profile, "deploy" a new marker, relaunch (new process, same profile), then reload twice and go offline; all three markers must always match.
+
 ## Content-Security-Policy (extra protection on the public page)
 
 `index.html` has a `<meta http-equiv="Content-Security-Policy">` tag. It tells the browser that the page may only run its own scripts and styles, load its own images, and **send data only to `script.google.com` and `script.googleusercontent.com`**. If someone ever managed to inject code into the page, it still could not send the token to another server.
@@ -145,6 +157,7 @@ If sending suddenly stops with `No connection. Not sent.` while the phone is onl
 | Mail "Reminder failed: …" arrives | A scheduled reminder could not be delivered after 5 tries. Resend it by hand; check Gmail limits and Apps Script → Executions. |
 | A time button or the settings box says `Line N: …` | The time-buttons text has an entry the app cannot read. Fix that line. |
 | `Timed out. Not confirmed…` | Check the inbox before sending again. |
+| `Unexpected reply. Not confirmed…` | The server answered with something that is not the app's reply (for example a Google error page). The mail may have been sent: check the inbox before sending again, then check the Apps Script deployment and Executions. |
 | Scheduled mail never arrives | Triggers page (clock icon) must list `processQueue`; if missing, run `setupTrigger` again. Executions page shows errors. |
 | Old layout still showing on the phone | Close and reopen the app once; Pages can take a minute. |
 

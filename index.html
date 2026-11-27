@@ -18,12 +18,17 @@
 <!-- The scripts build the time buttons. "defer" runs them after the page is parsed; blocking="render" holds the
      first paint until they have run, so the buttons are already there and nothing jumps down when they appear.
      Do not move these back to the end of <body>. -->
+<script defer blocking="render" src="diag.js"></script>
 <script defer blocking="render" src="util.js"></script>
 <script defer blocking="render" src="presets.js"></script>
 <script defer blocking="render" src="app.js"></script>
 <title>Quick Reminder</title>
 </head>
 <body>
+<!-- Launch cover: hides the page for the first 0.2 s (then fades out, pure CSS, no script needed), so any
+     last-moment settling of the window does not show. Also lets the black Android splash flow into the app. -->
+<div id="cover" aria-hidden="true"><img src="icon-192.png" alt="" width="96" height="96"></div>
+<div id="probe" aria-hidden="true"></div>
 <main>
 <header>
   <h1>Quick Reminder</h1>
@@ -45,6 +50,11 @@
   <button type="button" id="cfgClose" class="secondary">Close without saving</button>
   <button type="button" id="cfgClear">Forget this phone's settings</button>
   <div id="cfgMsg" role="status"></div>
+  <details id="diag">
+    <summary>Launch log (for troubleshooting)</summary>
+    <p>What changed on the screen during the first 4 seconds after the app opened. Kept only in memory.</p>
+    <pre id="diagLog"></pre>
+  </details>
 </form>
 
 <form id="f">

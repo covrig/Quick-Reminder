@@ -87,6 +87,13 @@
   function applyPrefixLimit() { subject.maxLength = Util.MAX_SUBJECT - (prefix ? prefix.length + 1 : 0); }
   applyPrefixLimit();
 
+  // Launch cover (see index.html / style.css): count its 0.2 s from the first painted frame, not from page parse.
+  (function startCover() {
+    var cover = document.getElementById('cover');
+    if (!cover) return;
+    requestAnimationFrame(function () { requestAnimationFrame(function () { cover.classList.add('go'); }); });
+  })();
+
   var resetTimer;
   function fail(text) {
     btn.classList.remove('done'); btn.textContent = 'Send'; st.className = 'err'; st.textContent = text;
@@ -145,6 +152,11 @@
     try { var x = new URL(u); return x.protocol === 'https:' && x.hostname === 'script.google.com'; }
     catch (e) { return false; }
   }
+  // Launch log (see diag.js): refreshed whenever settings open or the section is expanded.
+  var diagBox = document.getElementById('diag'), diagLog = document.getElementById('diagLog');
+  function showLog() { diagLog.textContent = typeof Diag === 'undefined' ? 'Launch log not available.' : Diag.text(); }
+  diagBox.addEventListener('toggle', function () { if (diagBox.open) showLog(); });
+
   function showSetup(note) {
     setup.hidden = false; f.hidden = true; cfgMsg.textContent = note || '';
     var c = loadCfg(); cfgUrl.value = c ? c.url : ''; cfgToken.value = '';
@@ -153,6 +165,7 @@
     var pt = loadPresetText(); // a damaged saved value shows the defaults instead
     cfgPresets.value = pt !== null && Presets.fromText(pt).ok ? pt : Presets.DEFAULT_TEXT;
     cfgPrefix.value = prefix;
+    showLog();
     // The top-right button becomes a close button while settings are open.
     gear.textContent = '✕'; gear.setAttribute('aria-label', 'Close settings'); gear.title = 'Close settings';
     cfgUrl.focus();

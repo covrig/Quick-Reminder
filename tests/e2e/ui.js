@@ -316,6 +316,89 @@ module.exports = async function run(pw) {
       await nv.browser.close();
     }
 
+    // ---------- vibration after a refresh: Chrome only vibrates after a TAP (a swipe never counts) ----------
+    // The recorder behaves like Chrome: navigator.userActivation.hasBeenActive and vibrate() stay "blocked" until the first click.
+    const CHROME_LIKE = () => {
+      window.__vib = []; let active = false;
+      Object.defineProperty(navigator, 'userActivation', { configurable: true, value: { get hasBeenActive() { return active; }, get isActive() { return active; } } });
+      document.addEventListener('click', () => { active = true; }, true); // registered before the app's own listeners, like activation preceding a click
+      Object.defineProperty(navigator, 'vibrate', { configurable: true, value: (p) => { if (!active) { window.__blocked = (window.__blocked || 0) + 1; return false; } window.__vib.push(p); return true; } });
+    };
+    {
+      const { browser, ctx, page, problems } = await newPage(pw, base, { init: CHROME_LIKE });
+      const cdp = await ctx.newCDPSession(page);
+      await page.evaluate(() => { window.fetch = () => Promise.resolve({ json: () => Promise.resolve({ ok: true, items: [] }) }); });
+      const info = () => page.evaluate(() => ({ vib: window.__vib.slice(), blocked: window.__blocked || 0, toast: !document.getElementById('buzzHint').hidden, toastText: document.getElementById('buzzHint').textContent, active: document.getElementById('wheel').classList.contains('active'), on: [...document.querySelectorAll('.wheel-item')].findIndex((e) => e.classList.contains('on')) }));
+      const clear = () => page.evaluate(() => { window.__vib.length = 0; });
+      const iw = await page.evaluate(() => document.querySelector('.wheel-item').offsetWidth);
+      const swipe3 = async () => { const b = await page.locator('#wheelTrack').boundingBox(), x0 = b.x + b.width / 2, y0 = b.y + b.height / 2; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] }); for (let i = 1; i <= 16; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 - 3 * iw * i / 16, y: y0 }] }); await page.waitForTimeout(18); } await page.waitForTimeout(100); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await page.waitForTimeout(800); };
+      await page.evaluate(() => { const t = document.getElementById('wheelTrack'), f = t.firstElementChild; t.style.scrollSnapType = 'none'; t.scrollLeft = f.offsetLeft + f.offsetWidth / 2 - t.clientWidth / 2; setTimeout(() => (t.style.scrollSnapType = ''), 0); }); await page.waitForTimeout(300);
+
+      // fresh page (like right after a pull-to-refresh): swiping the wheel works but cannot vibrate yet; a notice explains why
+      await swipe3(); const a = await info();
+      check('after a refresh, before any tap: the wheel still selects, nothing vibrates (Chrome would refuse), a notice says "Tap anywhere once to turn on vibration"', a.active && a.on === 3 && a.vib.length === 0 && a.blocked === 0 && a.toast && a.toastText === 'Tap anywhere once to turn on vibration', a);
+      const noShift = await page.evaluate(() => { const t = document.getElementById('buzzHint'); const r = t.getBoundingClientRect(); return { fixed: getComputedStyle(t).position, noTaps: getComputedStyle(t).pointerEvents, fromBottom: Math.round(innerHeight - r.bottom), docH: document.documentElement.scrollHeight, winH: innerHeight }; });
+      check('the notice floats at the bottom without moving the page or catching taps', noShift.fixed === 'fixed' && noShift.noTaps === 'none' && noShift.fromBottom < 120 && noShift.fromBottom >= 0 && noShift.docH === noShift.winH, noShift);
+      // the first tap anywhere unlocks vibration: the notice goes away, and the tap itself ticks
+      await page.tap('#chips label:nth-child(7)'); await page.waitForTimeout(200); const b = await info();
+      check('the first tap (on a time button) hides the notice and gives a light 15 ms tick', !b.toast && JSON.stringify(b.vib) === '[15]', b);
+      await clear(); await page.evaluate(() => { const t = document.getElementById('wheelTrack'), f = t.firstElementChild; t.style.scrollSnapType = 'none'; t.scrollLeft = f.offsetLeft + f.offsetWidth / 2 - t.clientWidth / 2; setTimeout(() => (t.style.scrollSnapType = ''), 0); }); await page.waitForTimeout(300); await clear();
+      await swipe3(); const c = await info();
+      check('after that tap the wheel clicks again: 3 hours = 3 ticks of 25 ms, no notice', c.vib.length === 3 && c.vib.every((v) => v === 25) && !c.toast, c);
+
+      // every kind of button ticks once (15 ms); Send, Test vibration and the wheel keep their own patterns
+      const one = async (label, selector, want) => { await clear(); await page.tap(selector); await page.waitForTimeout(250); const v = (await info()).vib; return { label, ok: JSON.stringify(v) === JSON.stringify(want), v }; };
+      const taps = [];
+      taps.push(await one('Work label', 'label.c-work', [15]));
+      taps.push(await one('Personal label', 'label.c-personal', [15]));
+      taps.push(await one('time button', '#chips label:nth-child(2)', [15]));
+      taps.push(await one('Now button', '#chips label:nth-child(1)', [15]));
+      taps.push(await one('settings gear (open)', '#gear', [15]));
+      taps.push(await one('Reset time buttons', '#cfgReset', [15]));
+      taps.push(await one('Test vibration (own pattern only)', '#cfgBuzz', [[150, 80, 150]]));
+      taps.push(await one('Save', '#setup button[type=submit]', [15]));
+      taps.push(await one('scheduled-reminders button (open)', '#schedBtn', [15]));
+      taps.push(await one('Refresh', '#schedRefresh', [15]));
+      taps.push(await one('scheduled-reminders button (close)', '#schedBtn', [15]));
+      taps.push(await one('Send with nothing typed (error buzz only)', '#btn', [[100, 80, 100]]));
+      await page.evaluate(() => { document.querySelector('input[name=p][value=now]').click(); }); await clear();
+      check('every button gives exactly one 15 ms tick; Test vibration and Send keep their own pattern only', taps.every((t) => t.ok), taps);
+      await clear(); const far = await page.evaluate(() => { const on = [...document.querySelectorAll('.wheel-item')].findIndex((e) => e.classList.contains('on')); return (on > 7 ? on - 2 : on + 2) + 1; }); // an hour two places away
+      await page.tap(`.wheel-item:nth-child(${far})`); await page.waitForTimeout(800); const wt = (await info()).vib;
+      check('tapping a wheel hour gives only 25 ms wheel ticks, never the 15 ms button tick', wt.length >= 1 && wt.every((v) => v === 25), wt);
+      check('vibration notice: no script errors or CSP violations', problems.errors.length === 0 && (await page.evaluate(() => window.__viol || [])).length === 0, problems.errors);
+      await browser.close();
+
+    }
+    // switched off, API missing, activation API missing: each on a fresh page
+    {
+      const swipeOn = async (pageObj, ctxObj, iw) => { const cdp2 = await ctxObj.newCDPSession(pageObj); const b = await pageObj.locator('#wheelTrack').boundingBox(), x0 = b.x + b.width / 2, y0 = b.y + b.height / 2; await cdp2.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] }); for (let i = 1; i <= 16; i++) { await cdp2.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 - 3 * iw * i / 16, y: y0 }] }); await pageObj.waitForTimeout(18); } await pageObj.waitForTimeout(100); await cdp2.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pageObj.waitForTimeout(800); };
+      const read = (pageObj) => pageObj.evaluate(() => ({ vib: (window.__vib || []).slice(), blocked: window.__blocked || 0, toast: !document.getElementById('buzzHint').hidden, active: document.getElementById('wheel').classList.contains('active') }));
+      const firstHour = (pageObj) => pageObj.evaluate(() => { const t = document.getElementById('wheelTrack'), f = t.firstElementChild; t.style.scrollSnapType = 'none'; t.scrollLeft = f.offsetLeft + f.offsetWidth / 2 - t.clientWidth / 2; setTimeout(() => (t.style.scrollSnapType = ''), 0); });
+
+      // 1. switched off in settings (the stored switch is read at load): no notice, nothing vibrates, even after taps
+      const offP = await newPage(pw, base, { init: () => { try { localStorage.setItem('qr_haptics', '0'); } catch (e) { /* ignore */ } CHROME_LIKE(); } });
+      await firstHour(offP.page); await offP.page.waitForTimeout(300);
+      const iwOff = await offP.page.evaluate(() => document.querySelector('.wheel-item').offsetWidth);
+      await swipeOn(offP.page, offP.ctx, iwOff); const o0 = await read(offP.page); await offP.page.tap('#chips label:nth-child(3)'); await offP.page.waitForTimeout(200); const o1 = await read(offP.page); o1.active = o0.active; // the wheel is dimmed again by the tap
+      check('vibration switched off: the wheel still works, no notice, no vibration, no vibrate() call at all', o1.active && !o1.toast && o1.vib.length === 0 && o1.blocked === 0, o1);
+      await offP.browser.close();
+
+      // 2. the browser has no navigator.userActivation: treated as ready, ticks flow from the very first swipe, no notice
+      const noUa = await newPage(pw, base, { init: () => { window.__vib = []; Object.defineProperty(navigator, 'userActivation', { configurable: true, value: undefined }); Object.defineProperty(navigator, 'vibrate', { configurable: true, value: (p) => { window.__vib.push(p); return true; } }); } });
+      await firstHour(noUa.page); await noUa.page.waitForTimeout(300);
+      await swipeOn(noUa.page, noUa.ctx, await noUa.page.evaluate(() => document.querySelector('.wheel-item').offsetWidth)); const u1 = await read(noUa.page);
+      check('no navigator.userActivation: ticks work from the first swipe and no notice is shown', u1.vib.length === 3 && u1.vib.every((v) => v === 25) && !u1.toast, u1);
+      await noUa.browser.close();
+
+      // 3. no vibrate() at all (desktop, iOS): no notice, no errors, the wheel works
+      const noVib = await newPage(pw, base, { init: () => { try { delete Navigator.prototype.vibrate; } catch (e) { /* ignore */ } } });
+      await firstHour(noVib.page); await noVib.page.waitForTimeout(300);
+      await swipeOn(noVib.page, noVib.ctx, await noVib.page.evaluate(() => document.querySelector('.wheel-item').offsetWidth)); const n1 = await read(noVib.page);
+      check('no vibrate() in the browser: no notice, no errors, the wheel still selects', n1.active && !n1.toast && noVib.problems.errors.length === 0, [n1, noVib.problems.errors]);
+      await noVib.browser.close();
+    }
+
     // ---------- safe retry: the request id ----------
     {
       const { browser, page, problems } = await newPage(pw, base);
@@ -437,8 +520,8 @@ module.exports = async function run(pw) {
         r.settingsOver.setup && !r.settingsOver.sched && r.settingsOver.gear === '✕' && r.settingsOver.clockShown && r.schedOver.sched && !r.schedOver.setup && r.escape.form && !r.escape.sched && r.closeBtn.form && r.topX.form && r.topX.clockShown, [r.settingsOver, r.schedOver, r.escape, r.closeBtn, r.topX]);
       check('Refresh asks the server again', r.refresh.requests === 1 && r.refresh.last === 'list' && r.refresh.rows === 3, r.refresh);
       check('cancel needs two taps: "Sure? Tap again", no request yet; it disarms itself after 3 s', r.armed.text === 'Sure? Tap again' && r.armed.requests === 0 && r.disarmed.text === 'Cancel' && r.disarmed.requests === 0, [r.armed, r.disarmed]);
-      check('second tap cancels: request {action cancel, id, token}, row removed, message, short buzz', r.cancelled.call.action === 'cancel' && r.cancelled.call.id === 'idaaaaaa1' && r.cancelled.rows.join() === 'Mystery,Pay rent' && r.cancelled.state.text === 'Cancelled.' && JSON.stringify(r.cancelled.vib) === '[60]', r.cancelled);
-      check('a refused cancel keeps the row, re-enables the button, shows the error and double-buzzes', r.refused.rows === 2 && r.refused.btn === 'Cancel' && !r.refused.disabled && r.refused.state.err && r.refused.state.text === 'Unauthorized' && JSON.stringify(r.refused.vib) === '[[100,80,100]]', r.refused);
+      check('second tap cancels: request {action cancel, id, token}, row removed, message, short buzz', r.cancelled.call.action === 'cancel' && r.cancelled.call.id === 'idaaaaaa1' && r.cancelled.rows.join() === 'Mystery,Pay rent' && r.cancelled.state.text === 'Cancelled.' && JSON.stringify(r.cancelled.vib.filter((v) => v !== 15)) === '[60]' && r.cancelled.vib.includes(15), r.cancelled); // the taps tick (15), the result buzzes (60)
+      check('a refused cancel keeps the row, re-enables the button, shows the error and double-buzzes', r.refused.rows === 2 && r.refused.btn === 'Cancel' && !r.refused.disabled && r.refused.state.err && r.refused.state.text === 'Unauthorized' && JSON.stringify(r.refused.vib.filter((v) => v !== 15)) === '[[100,80,100]]' && r.refused.vib.includes(15), r.refused);
       check('"Not found (maybe already sent)" removes the row and shows the server\'s text', r.gone.rows === 1 && r.gone.state.err && /Not found/.test(r.gone.state.text), r.gone);
       check('cancelling the last one says nothing else is scheduled; Refresh shows "Nothing scheduled."', r.last.rows === 0 && /Nothing else is scheduled/.test(r.last.state.text) && r.emptyAfterRefresh.state.text === 'Nothing scheduled.' && r.emptyAfterRefresh.rows === 0, [r.last, r.emptyAfterRefresh]);
       check('load failures: no connection, timeout, unreadable reply, lockout; the server error text is shown and Refresh is usable', r.load_net.state.text === 'No connection.' && r.load_abort.state.text === 'Timed out. Try again.' && r.load_nonjson.state.text === 'Unexpected reply from the server.' && r.load_locked.state.text === 'Locked, try again later' && [r.load_net, r.load_abort, r.load_nonjson, r.load_locked].every((x) => x.state.err && x.rows === 0 && x.refreshEnabled), r);

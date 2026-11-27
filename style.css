@@ -1,4 +1,4 @@
-:root { --build:"712ab99e"; }
+:root { --build:"38a4971b"; }
 /* The app is ALWAYS dark on purpose. The manifest holds ONE launch colour and Android paints it around the page
    (launch screen, status bar, the strip under the keyboard, behind the gesture handle). If the page changed with the
    phone's light/dark mode, the two would differ and a light edge or flash would show. See README "Colours must match". */
@@ -122,3 +122,8 @@ button:disabled { opacity:.6; }
    makes the page scrollable, an absolute one could. */
 .vhprobe { position:fixed; left:0; top:0; width:1px; visibility:hidden; pointer-events:none; }
 #vhD { height:100dvh; } #vhS { height:100svh; } #vhL { height:100lvh; }
+/* Small notice at the bottom (no layout shift, never catches taps): shown when Chrome will not vibrate yet. */
+.toast { position:fixed; bottom:calc(max(16px, env(safe-area-inset-bottom)) + 12px); left:50%; transform:translateX(-50%); z-index:50;
+         max-width:calc(100% - 32px); padding:10px 14px; border-radius:12px; background:#26262a; color:var(--fg);
+         border:1px solid var(--border); font-size:.9em; text-align:center; pointer-events:none; }
+.toast[hidden] { display:none; }

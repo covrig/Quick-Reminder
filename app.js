@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var BUILD = '712ab99e'; // build stamp, written by tools/stamp.js
+  var BUILD = '38a4971b'; // build stamp, written by tools/stamp.js
 
   var f = document.getElementById('f'), st = document.getElementById('status'),
       btn = document.getElementById('btn'), at = document.getElementById('at'),
@@ -24,11 +24,33 @@
     try { return localStorage.getItem('qr_haptics') !== '0'; } catch (e) { return true; }
   }
   var haptics = loadHaptics();
+  // Chrome only lets a page vibrate after the user has TAPPED it (a swipe does not count). A reloaded page starts with no
+  // tap, so the first wheel swipe after a pull-to-refresh was silent until some button was pressed. Every button now
+  // gives a tick (which is that tap); until then a small notice explains it.
+  var buzzHint = document.getElementById('buzzHint'), hintShown = false;
+  function vibrationReady() { var ua = navigator.userActivation; return !ua || ua.hasBeenActive !== false; } // no API: assume ready
+  function hideBuzzHint() { buzzHint.hidden = true; }
+  function showBuzzHint() {
+    if (hintShown || !navigator.vibrate) return;
+    hintShown = true; buzzHint.hidden = false;
+    document.addEventListener('click', hideBuzzHint, { capture: true, once: true });
+  }
   function buzz(kind) {
     if (!haptics) return;
     var p = Util.hapticPattern(kind);
-    try { if (p !== null && navigator.vibrate) navigator.vibrate(p); } catch (e) { /* not supported or blocked */ }
+    if (p === null) return;
+    if (!vibrationReady()) { showBuzzHint(); return; }
+    try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) { /* not supported or blocked */ }
   }
+  // A light tick for every button (Send, Test vibration and the wheel have their own patterns). A tap on a time
+  // button or Personal/Work is a click on the label AND on its hidden radio input, hence the 40 ms guard.
+  var lastPress = 0;
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest ? e.target.closest('button, .seg label') : null;
+    if (!el || el.id === 'btn' || el.id === 'cfgBuzz') return;
+    var t = performance.now(); if (t - lastPress < 40) return; lastPress = t;
+    buzz('press');
+  }, true);
 
   // Time buttons. Built with the DOM API (no inline styles/HTML) so a strict CSP works.
   function renderChips() {

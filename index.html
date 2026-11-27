@@ -5,7 +5,7 @@
 <!-- Locks the page down: only its own files run, and the only server it may talk to is Google Apps Script.
      If sending ever stops working after Google changes hosts, see "Content-Security-Policy" in the README. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
-<meta name="build" content="712ab99e">
+<meta name="build" content="38a4971b">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- The app is always dark: launch screen, status bar and the page share ONE colour (see README "Colours must match"). -->
 <meta name="color-scheme" content="dark">
@@ -25,6 +25,7 @@
 <title>Quick Reminder</title>
 </head>
 <body>
+<div id="buzzHint" class="toast" role="status" hidden>Tap anywhere once to turn on vibration</div>
 <div id="vhD" class="vhprobe" aria-hidden="true"></div><div id="vhS" class="vhprobe" aria-hidden="true"></div><div id="vhL" class="vhprobe" aria-hidden="true"></div>
 <main>
 <header>

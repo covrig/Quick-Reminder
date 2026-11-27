@@ -1,6 +1,8 @@
 (function () {
   'use strict';
 
+  var BUILD = '71a3fe5a'; // build stamp, written by tools/stamp.js
+
   var f = document.getElementById('f'), st = document.getElementById('status'),
       btn = document.getElementById('btn'), at = document.getElementById('at'),
       whenEl = document.getElementById('when'), msg = document.getElementById('msg'),
@@ -239,7 +241,7 @@
       cfgToken = document.getElementById('cfgToken'), cfgMsg = document.getElementById('cfgMsg'),
       cfgPresets = document.getElementById('cfgPresets'), cfgPrefix = document.getElementById('cfgPrefix'),
       cfgHaptics = document.getElementById('cfgHaptics'), gear = document.getElementById('gear'),
-      sched = document.getElementById('sched'), schedBtn = document.getElementById('schedBtn'),
+      cfgVersion = document.getElementById('cfgVersion'), sched = document.getElementById('sched'), schedBtn = document.getElementById('schedBtn'),
       schedList = document.getElementById('schedList'), schedState = document.getElementById('schedState'),
       schedRefresh = document.getElementById('schedRefresh');
   function loadCfg() {
@@ -261,6 +263,15 @@
     schedBtn.classList.toggle('open', c); // CSS shows the clock or the ✕ (SVG elements have no 'hidden' property)
     schedBtn.setAttribute('aria-label', c ? 'Close scheduled reminders' : 'Scheduled reminders'); schedBtn.title = c ? 'Close scheduled reminders' : 'Scheduled reminders';
   }
+  // Which version is running? The build stamp is written into the page, the stylesheet and the script. If they
+  // differ, the phone loaded a mix of old and new files (see "Service worker and caching" in the README).
+  function showVersion() {
+    var meta = document.querySelector('meta[name="build"]'), page = meta ? meta.content : '?',
+        css = (getComputedStyle(document.documentElement).getPropertyValue('--build') || '').replace(/["'\s]/g, '') || '?';
+    var same = page === BUILD && css === BUILD;
+    cfgVersion.className = same ? '' : 'err';
+    cfgVersion.textContent = same ? 'Version ' + BUILD : 'Files are out of sync (page ' + page + ', script ' + BUILD + ', style ' + css + '). Close and reopen the app.';
+  }
   function showSetup(note) {
     sched.hidden = true; setup.hidden = false; f.hidden = true; cfgMsg.textContent = note || '';
     var c = loadCfg(); cfgUrl.value = c ? c.url : ''; cfgToken.value = '';
@@ -269,7 +280,7 @@
     var pt = loadPresetText(); // a damaged saved value shows the defaults instead
     cfgPresets.value = pt !== null && Presets.fromText(pt).ok ? pt : Presets.DEFAULT_TEXT;
     cfgPrefix.value = prefix; cfgHaptics.checked = haptics;
-    setButtons();
+    showVersion(); setButtons();
     cfgUrl.focus();
   }
   function showForm() {

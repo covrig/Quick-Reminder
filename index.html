@@ -5,6 +5,7 @@
 <!-- Locks the page down: only its own files run, and the only server it may talk to is Google Apps Script.
      If sending ever stops working after Google changes hosts, see "Content-Security-Policy" in the README. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
+<meta name="build" content="71a3fe5a">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- Status bar / window colours follow the phone theme and match the page background (no blue). -->
 <meta name="color-scheme" content="light dark">
@@ -62,6 +63,7 @@
   <button type="button" id="cfgClose" class="secondary">Close without saving</button>
   <button type="button" id="cfgClear">Forget this phone's settings</button>
   <div id="cfgMsg" role="status"></div>
+  <p id="cfgVersion"></p>
 </form>
 
 <form id="f">

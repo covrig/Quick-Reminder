@@ -416,6 +416,24 @@ module.exports = async function run(pw) {
       await browser.close();
     }
 
+    // ---------- build stamp in settings ----------
+    {
+      const { browser, page } = await newPage(pw, base);
+      const r = await page.evaluate(() => { document.getElementById('gear').click(); const v = document.getElementById('cfgVersion'); return { text: v.textContent, err: v.classList.contains('err'), meta: document.querySelector('meta[name=build]').content, css: getComputedStyle(document.documentElement).getPropertyValue('--build').replace(/["'\s]/g, '') }; });
+      check('settings show "Version <build>" (the same id in the page, the stylesheet and the script) with no warning', /^Version [0-9a-f]{8}$/.test(r.text) && !r.err && r.text === 'Version ' + r.meta && r.meta === r.css, r);
+      await browser.close();
+      // a phone that loaded an old script with the new page: the warning names all three
+      const dir2 = copySite('stamp'), server2 = await startServer(dir2);
+      try {
+        const fs = require('fs'), path = require('path');
+        fs.writeFileSync(path.join(dir2, 'app.js'), fs.readFileSync(path.join(dir2, 'app.js'), 'utf8').replace(/var BUILD = '[0-9a-f]{8}'/, "var BUILD = 'deadbeef'"));
+        const m = await newPage(pw, `http://127.0.0.1:${server2.port}`);
+        const w = await m.page.evaluate(() => { document.getElementById('gear').click(); const v = document.getElementById('cfgVersion'); return { text: v.textContent, err: v.classList.contains('err'), meta: document.querySelector('meta[name=build]').content }; });
+        check('an old script with a new page: settings warn "Files are out of sync" and name page, script and style versions', w.err && /^Files are out of sync \(page [0-9a-f]{8}, script deadbeef, style [0-9a-f]{8}\)\. Close and reopen the app\.$/.test(w.text) && w.text.includes('page ' + w.meta), w);
+        await m.browser.close();
+      } finally { await server2.close(); rmrf(dir2); }
+    }
+
     // ---------- dark mode paints a dark page ----------
     {
       const { browser, page } = await newPage(pw, base, { scheme: 'dark' });

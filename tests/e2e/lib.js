@@ -42,11 +42,7 @@ function startServer(dir) {
 // Copy the website (never the tests or tools) into a fresh temp folder so tests can edit files ("deploy").
 function copySite(name) {
   const dest = fs.mkdtempSync(path.join(os.tmpdir(), `qr-e2e-${name}-`));
-  for (const f of fs.readdirSync(REPO)) {
-    const p = path.join(REPO, f);
-    if (!fs.statSync(p).isFile() || f === 'test-site.js') continue;
-    if (/\.(html|css|js|webmanifest|png)$/.test(f)) fs.copyFileSync(p, path.join(dest, f));
-  }
+  for (const f of require('../../tools/stamp.js').siteFiles(REPO)) fs.copyFileSync(path.join(REPO, f), path.join(dest, f)); // same file list as the build stamp
   return dest;
 }
 

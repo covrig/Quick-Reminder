@@ -27,7 +27,9 @@ This whole folder is one **public** git repo (`github.com/covrig/Quick-Reminder`
 backend/Code.gs        Apps Script backend: copy into script.google.com
 backend/appsscript.json  Apps Script settings (access = Anyone)
 backend/test.js        tests for the backend            (node backend/test.js)
-test-site.js           tests for presets.js / util.js   (node test-site.js)
+test-site.js           tests for presets.js / util.js / wheel.js and the build stamp   (node test-site.js)
+tests/e2e/             browser tests (layout shift, service worker, UI)   (node tests/e2e/run.js)
+tools/stamp.js         writes / checks the build stamp shown in Settings   (node tools/stamp.js)
 icon-src/              original icon artwork (icon.png, icon.svg)
 README.md              this file
 ```
@@ -57,11 +59,15 @@ If you add a new file to the site, add it to `FILES` in `sw.js` and, if it is a 
 
 ```
 # edit the files, then:
-node test-site.js        # if you touched presets.js or util.js
+node tools/stamp.js      # ALWAYS after changing any website file: writes the new build stamp
+node test-site.js        # unit tests (fails if you forgot the stamp)
+node tests/e2e/run.js    # browser tests (needs Playwright, see "Tests")
 git add -A && git commit -m "describe change" && git push origin main
 ```
 
 GitHub Pages rebuilds in about a minute. On the phone, close and reopen the app once. No change is needed in Apps Script.
+
+**Build stamp:** `tools/stamp.js` fingerprints all website files (HTML, CSS, JS, manifest, icons; not the tests) into 8 hex characters and writes it into `index.html` (`<meta name="build">`), `style.css` (`--build`) and `app.js` (`BUILD`). Settings (⚙, bottom) shows "Version abc12345". If the three disagree, the phone loaded a mix of old and new files and settings say "Files are out of sync (page …, script …, style …). Close and reopen the app." The service worker is meant to make that impossible; the stamp tells you at a glance if it ever happens. `node tools/stamp.js --check` only verifies; `node test-site.js` runs that check, so a forgotten stamp fails the tests instead of shipping.
 
 Changes to `manifest.webmanifest` (name, icon, shortcuts, share target, colours) are picked up by Android on its own schedule, up to about a day. To force it, uninstall the app and install it again.
 

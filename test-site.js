@@ -286,4 +286,46 @@ assert.notStrictEqual(U.hapticPattern('error'), U.hapticPattern('error'), 'a cop
 ['tick', 'tap', 'ok', 'error', 'test'].forEach((k) => { const p = [].concat(U.hapticPattern(k)); assert.ok(p.every((n) => Number.isInteger(n) && n > 0) && p.reduce((a, b) => a + b, 0) <= 1000, k + ' pattern is sane and under 1 s'); });
 assert.ok(U.hapticPattern('error').length > 1 && !Array.isArray(U.hapticPattern('ok')), 'error is a double buzz, ok a single one');
 
+// ===================== build stamp (tools/stamp.js) =====================
+{
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const T = require('./tools/stamp.js');
+  const repo = T.check(__dirname);
+  assert.ok(repo.ok, 'the build stamp in the site files is out of date: run  node tools/stamp.js  (files hash to ' + repo.want + ', stamped ' + JSON.stringify(repo.have) + ')');
+  assert.ok(/^[0-9a-f]{8}$/.test(repo.want));
+
+  // work on a scratch copy so the repo is never touched
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qr-stamp-'));
+  try {
+    T.siteFiles(__dirname).forEach((f) => fs.copyFileSync(path.join(__dirname, f), path.join(dir, f)));
+    assert.deepStrictEqual(T.siteFiles(dir), T.siteFiles(__dirname), 'the copy has the same files');
+    assert.ok(!T.siteFiles(dir).includes('test-site.js') && T.siteFiles(dir).includes('wheel.js') && T.siteFiles(dir).includes('icon-192.png'), 'tests are not part of the site, every site file (also images) is');
+    const h0 = T.fingerprint(dir);
+    assert.strictEqual(h0, repo.want, 'the copy fingerprints the same');
+    assert.strictEqual(T.write(dir), h0, 'writing again does not change the fingerprint (the stamp lines are left out of it)');
+    assert.deepStrictEqual(T.stamped(dir), { 'index.html': h0, 'style.css': h0, 'app.js': h0 });
+    // any change to any file makes the stamp stale, and writing fixes it
+    for (const [file, edit] of [['presets.js', (t) => t + '\n// x'], ['util.js', (t) => t.replace('MAX_BODY', 'MAX_BODY2')], ['sw.js', (t) => t + ' '], ['manifest.webmanifest', (t) => t.replace('Reminder', 'Reminders')], ['index.html', (t) => t.replace('<title>', '<title> ')], ['app.js', (t) => t.replace("'use strict';", "'use strict'; ")], ['style.css', (t) => t + '\n/* x */']]) {
+      const keep = fs.readFileSync(path.join(dir, file), 'utf8');
+      fs.writeFileSync(path.join(dir, file), edit(keep));
+      const c = T.check(dir);
+      assert.ok(!c.ok && c.want !== h0, 'editing ' + file + ' makes the stamp stale');
+      assert.strictEqual(T.write(dir), c.want); assert.ok(T.check(dir).ok, 'rewritten after ' + file);
+      fs.writeFileSync(path.join(dir, file), keep); T.write(dir);
+      assert.strictEqual(T.fingerprint(dir), h0, 'undoing the edit gives the old fingerprint back');
+    }
+    // an image change counts too
+    const png = fs.readFileSync(path.join(dir, 'icon-192.png')); png[png.length - 5] ^= 1; fs.writeFileSync(path.join(dir, 'icon-192.png'), png);
+    assert.ok(!T.check(dir).ok, 'changing an icon makes the stamp stale');
+    png[png.length - 5] ^= 1; fs.writeFileSync(path.join(dir, 'icon-192.png'), png); assert.ok(T.check(dir).ok);
+    // a file with a wrong stamp is detected, and a missing stamp line is a clear error
+    fs.writeFileSync(path.join(dir, 'app.js'), fs.readFileSync(path.join(dir, 'app.js'), 'utf8').replace(h0, 'deadbeef'));
+    assert.deepStrictEqual(T.check(dir).ok, false, 'one disagreeing file is noticed');
+    T.write(dir);
+    fs.writeFileSync(path.join(dir, 'style.css'), fs.readFileSync(path.join(dir, 'style.css'), 'utf8').replace(/^:root \{ --build[^\n]*\n/m, ''));
+    assert.throws(() => T.write(dir), /style\.css has no build stamp line/);
+    assert.deepStrictEqual(T.stamped(dir)['style.css'], '', 'a missing line reads as empty');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
 console.log('site tests passed');

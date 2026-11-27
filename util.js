@@ -78,7 +78,17 @@
     return Array.isArray(p) ? p.slice() : p;
   }
 
-  var api = { capitalizeSubject: capitalizeSubject, parseLaunch: parseLaunch,
+  // Random id for one send. The server never sends the same id twice, so a retry after a timeout cannot duplicate
+  // the email. Matches the server's /^[A-Za-z0-9_-]{8,64}$/. `cryptoLike` is only for tests.
+  function newRequestId(cryptoLike) {
+    var c = cryptoLike || root.crypto;
+    try { if (c && typeof c.randomUUID === 'function') return c.randomUUID(); } catch (e) { /* fall through */ }
+    var s = '';
+    for (var i = 0; i < 24; i++) s += Math.floor(Math.random() * 36).toString(36);
+    return 'r' + s;
+  }
+
+  var api = { capitalizeSubject: capitalizeSubject, parseLaunch: parseLaunch, newRequestId: newRequestId,
               sanitizePrefix: sanitizePrefix, buildSubject: buildSubject, hapticPattern: hapticPattern,
               MAX_SUBJECT: MAX_SUBJECT, MAX_BODY: MAX_BODY, MAX_PREFIX: MAX_PREFIX };
   if (typeof module === 'object' && module.exports) module.exports = api;

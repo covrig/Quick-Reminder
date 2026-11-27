@@ -103,8 +103,23 @@ Change `API_TOKEN` in Script Properties. The old token stops working immediately
 | Wrong tokens before lockout | 10 in 15 min (nothing sends until the window passes) | `MAX_FAILS_PER_WINDOW` |
 | Subject / details length | 200 / 1000 characters | `MAX_SUBJECT`, `MAX_LEN` |
 | Delivery attempts of a scheduled mail | 5 (about 25 minutes), then it is dropped and an alert is mailed | `MAX_TRIES` |
+| A finished request id is remembered | 6 hours (the `CacheService` maximum); an unfinished one blocks a retry for 120 s | `DONE_TTL`, `PENDING_TTL` |
 
 Google also caps Gmail sending per day for the account. The script can only send mail, not read the inbox.
+
+## Backend API (what the page sends)
+
+Every request is a `POST` of JSON (as `text/plain`, so the browser needs no preflight) to the web app URL, always with the secret `token`. Wrong tokens count towards the lockout for every action.
+
+| `action` | Other fields | Reply |
+|---|---|---|
+| `send` (default when missing) | `subject`, `body`, `target` (`work`/`personal`), `sendAt` (ISO time or empty), `id` (request id, optional) | `{ok:true, status:'Sent'\|'Scheduled'\|'Already sent'\|'Already scheduled'}` or `{ok:false, error}` |
+| `list` | none | `{ok:true, items:[{id, at, target:'work'\|'personal'\|'unknown', subject}]}`, soonest first. Never email addresses or details. |
+| `cancel` | `id` | `{ok:true, status:'Cancelled'}` or `{ok:false, error:'Not found (maybe already sent)'}` |
+
+- **Safe retry:** the page makes a random `id` per send and keeps it for a retry of the same form content (same text, recipient, prefix and chosen time) after an error or timeout; a success or any change starts a new id. The server remembers an id for 6 hours: a second request with the same id answers "Already sent" / "Already scheduled" and sends nothing; a request that is still being handled answers "Still sending, check again shortly"; a *failed* attempt forgets its id so the retry works. Requests without an id (older page versions) behave as before. An id must be 8-64 characters of `A-Z a-z 0-9 _ -`.
+- **Scheduled reminders:** the queue lives in the Script Property `QUEUE`. Each item has an `id` (the request id) and a `target`; items queued by older versions get an id the first time they are listed. `list` and `cancel` do not count towards the hourly send limit and the send limit does not block them. Cancelling forgets the request id, so the same id can be scheduled again.
+- **Rollout order:** paste the new `Code.gs` and deploy a new version **first**. The page works against an older backend (it ignores the extra `id`), but the clock screen then says the backend is too old (an old backend treats `list`/`cancel` as a send and answers "Subject and details are both empty").
 
 **Failed scheduled mail:** if Gmail cannot deliver a scheduled reminder, it is retried every 5 minutes. After 5 failures it is removed from the queue and an email "Reminder failed: <subject>" (with the original text, recipient and last error) is sent to `PERSONAL_EMAIL`. If that alert cannot be sent either, it is only logged (Apps Script → Executions). Mail that was never accepted by the app (offline, wrong token) is not queued anywhere: the app shows an error instead.
 
@@ -114,6 +129,9 @@ Google also caps Gmail sending per day for the account. The script can only send
 - Clock buttons mean the *next* time that clock time occurs (after 8:30 AM has passed, "8:30 AM" means tomorrow). Hour/minute buttons (`+1h`) count from now. Switching to Work resets the time to Now.
 - The first letter of the subject is capitalised automatically, except when it starts with a link.
 - Times are worked out on the phone in its own time zone.
+
+### Scheduled reminders (clock button next to ⚙)
+The clock button in the header opens the list of reminders still waiting on the server: time, **Work / Personal** (or `?` if the recipient address was changed since), subject. **Cancel** needs two taps ("Sure? Tap again", it disarms itself after 3 s). Refresh asks the server again; the list is only fetched when you open the screen (nothing at launch). It opens like settings: the button turns into ✕, Escape or Close returns to the form, only one screen at a time. A cancel that comes back "Not found (maybe already sent)" simply removes the row. Needs the new backend (see Backend API); otherwise it says so.
 
 ### Hour wheel and vibration clicks
 - Under the time buttons is a **wheel of hours, 7 AM to 10 PM**. Swipe it (or tap an hour, or use the arrow keys): the hour under the centre marker becomes the send time, "next time it is that hour" (after 3 PM has passed, "3 PM" means tomorrow; those hours carry a small dot). It rests dimmed at the next hour and only becomes active when you touch it. Choosing a time button, typing a date, switching to Work or a successful send puts it back to dimmed, and choosing an hour clears the time buttons and the date, so only one way of choosing the time is active at a time.
@@ -164,18 +182,21 @@ If sending suddenly stops with `No connection. Not sent.` while the phone is onl
 | Mail "Reminder failed: …" arrives | A scheduled reminder could not be delivered after 5 tries. Resend it by hand; check Gmail limits and Apps Script → Executions. |
 | A time button or the settings box says `Line N: …` | The time-buttons text has an entry the app cannot read. Fix that line. |
 | `Timed out. Not confirmed…` | Check the inbox before sending again. |
+| `Already sent ✓` / `Already scheduled ✓` | You pressed Send again after an error or timeout and the first try had in fact worked: nothing was sent twice. |
+| `Still sending, check again shortly` | The first try is still being handled by Google. Wait a few seconds and press Send again (same text keeps the same id). |
+| `The backend is too old for this…` (clock screen) | Paste the current `backend/Code.gs` into Apps Script and deploy a new version. |
 | `Unexpected reply. Not confirmed…` | The server answered with something that is not the app's reply (for example a Google error page). The mail may have been sent: check the inbox before sending again, then check the Apps Script deployment and Executions. |
 | Scheduled mail never arrives | Triggers page (clock icon) must list `processQueue`; if missing, run `setupTrigger` again. Executions page shows errors. |
 | Old layout still showing on the phone | Close and reopen the app once; Pages can take a minute. |
 
 ## Tests
 
-- `node backend/test.js` tests the backend (`Code.gs`) with mocked Google services: token check, lockout, hourly limit, fixed recipients, sending, scheduling, retries and failure alerts. It sends no real mail. Run it after every change to `Code.gs`.
+- `node backend/test.js` tests the backend (`Code.gs`) with mocked Google services: token check, lockout, hourly limit, fixed recipients, sending, scheduling, retries and failure alerts, safe retry by request id, list and cancel of scheduled reminders. It sends no real mail. Run it after every change to `Code.gs`.
 - `node test-site.js` tests the pure site logic: time-button parsing and maths, subject capitalisation, and share/shortcut parameters (including hostile input).
 - `node tests/e2e/run.js [--only shift|sw|ui]` runs the **browser tests** in a phone-sized Chromium (about 1 minute). Playwright is not a dependency of this repo: in the dev container run it with `NODE_PATH=/opt/playwright-mcp/node_modules`, elsewhere install Playwright with Chromium first. It starts its own local server (mimicking GitHub Pages: `Cache-Control: max-age=600`, `Last-Modified`, 304) over a **temporary copy** of the site and never writes into the repo. The network is stubbed: nothing is ever sent and no real URL is contacted.
   - `shift`: the page must not move while it loads (fast, throttled cold start, second launch, custom buttons, first run).
   - `sw`: after a deploy the app must always show one consistent version (HTML, JS and CSS match) on a cold launch and on repeated pull-to-refresh, and must open offline. This is the test that catches the stale/mixed-files bug.
-  - `ui`: buttons and colours, Work resets the time, settings (open/close, validation, prefix, custom buttons, forget), sending and every result message, share/shortcut links including hostile text, dark mode, the hour wheel (real touch drags, taps, keyboard, interaction with the other time controls) and every vibration pattern (with a recorder instead of the vibrator), no script errors or CSP violations.
+  - `ui`: buttons and colours, the scheduled-reminders screen (list, two-step cancel, every failure, old backend), the request-id (safe retry) rules, Work resets the time, settings (open/close, validation, prefix, custom buttons, forget), sending and every result message, share/shortcut links including hostile text, dark mode, the hour wheel (real touch drags, taps, keyboard, interaction with the other time controls) and every vibration pattern (with a recorder instead of the vibrator), no script errors or CSP violations.
   - Both bugs these suites guard against were re-introduced on a scratch copy to confirm the suites fail (they do).
   - They cannot see the phone's own system bars, keyboard, vibration or real Google replies: check those on the phone.
 

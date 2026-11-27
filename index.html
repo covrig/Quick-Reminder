@@ -28,8 +28,22 @@
 <main>
 <header>
   <h1>Quick Reminder</h1>
-  <button id="gear" type="button" aria-label="Settings" title="Settings">⚙</button>
+  <div class="hbtns">
+    <button id="schedBtn" type="button" aria-label="Scheduled reminders" title="Scheduled reminders">
+      <svg id="schedIco" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.5 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span id="schedX">✕</span>
+    </button>
+    <button id="gear" type="button" aria-label="Settings" title="Settings">⚙</button>
+  </div>
 </header>
+
+<section id="sched" hidden aria-label="Scheduled reminders">
+  <h2>Scheduled reminders</h2>
+  <p id="schedState" role="status"></p>
+  <ul id="schedList"></ul>
+  <button type="button" id="schedRefresh" class="secondary">Refresh</button>
+  <button type="button" id="schedClose" class="secondary">Close</button>
+</section>
 
 <form id="setup" hidden autocomplete="off">
   <p>Paste your Apps Script web app URL and your secret token. They are stored only on this phone.</p>

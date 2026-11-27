@@ -259,6 +259,20 @@ wcols.forEach((c, i) => assert.ok(1.05 / (lumW(c) + 0.05) >= 3.6, 'white text re
 assert.ok(parseInt(wcols[0].slice(1, 3), 16) > parseInt(wcols[0].slice(5, 7), 16), 'morning is warm (more red than blue)');
 assert.ok(parseInt(wcols[15].slice(5, 7), 16) > parseInt(wcols[15].slice(1, 3), 16), 'evening is cool (more blue than red)');
 
+// --- request ids (safe retry): valid for the server, random, and the browser's UUID is used when there is one ---
+{
+  const ID = /^[A-Za-z0-9_-]{8,64}$/;
+  const ids = Array.from({ length: 200 }, () => U.newRequestId());
+  assert.ok(ids.every((i) => ID.test(i)), 'every fallback id is valid for the server: ' + ids.slice(0, 2));
+  assert.strictEqual(new Set(ids).size, 200, 'no repeats in 200 ids');
+  const uuid = '3b241101-e2bb-4255-8caf-4136c566a962';
+  assert.strictEqual(U.newRequestId({ randomUUID: () => uuid }), uuid, 'crypto.randomUUID is preferred');
+  assert.ok(ID.test(uuid), 'a UUID is a valid id');
+  assert.ok(ID.test(U.newRequestId({ randomUUID() { throw new Error('blocked'); } })), 'a throwing crypto falls back');
+  assert.ok(ID.test(U.newRequestId({})), 'a crypto without randomUUID falls back');
+  assert.ok(ID.test(U.newRequestId(null)), 'no crypto at all falls back');
+}
+
 // --- haptic patterns ---
 assert.strictEqual(U.hapticPattern('tick'), 10);
 assert.strictEqual(U.hapticPattern('tap'), 20);

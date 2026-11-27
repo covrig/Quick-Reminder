@@ -13,9 +13,30 @@ body { margin:0; min-height:100dvh; background:var(--bg); color:var(--fg);
 main { max-width:560px; margin-inline:auto; }
 header { display:flex; align-items:center; justify-content:space-between; margin:0 0 12px; }
 h1 { font-size:1.25em; margin:0; }
-#gear { width:48px; min-height:48px; margin:0; padding:0; background:transparent; color:var(--muted);
-        border:1px solid var(--border); font-size:1.2em; }
-#setup[hidden], #f[hidden] { display:none; }
+.hbtns { display:flex; gap:8px; }
+#gear, #schedBtn { width:48px; min-height:48px; margin:0; padding:0; background:transparent; color:var(--muted);
+                   border:1px solid var(--border); font-size:1.2em; display:flex; align-items:center; justify-content:center; }
+#schedBtn.open #schedIco, #schedBtn:not(.open) #schedX { display:none; }
+#setup[hidden], #f[hidden], #sched[hidden] { display:none; }
+/* Scheduled reminders screen */
+#sched h2 { font-size:1.05em; margin:0 0 8px; }
+#schedState { margin:0 0 12px; color:var(--muted); }
+#schedState:empty { display:none; }
+#schedState.err { color:var(--err); }
+#schedList { list-style:none; margin:0; padding:0; }
+.srow { display:grid; grid-template-columns:1fr 112px; gap:4px 12px; align-items:center; padding:12px; margin-bottom:8px;
+        border:1px solid var(--border); border-radius:12px; }
+.stop { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.stime { font-weight:600; }
+.ssub { grid-column:1; color:var(--muted); overflow-wrap:anywhere; }
+.scancel { grid-column:2; grid-row:1 / span 2; width:100%; min-height:44px; margin:0; padding:6px 8px; font-weight:600; font-size:.9em; line-height:1.2;
+           background:transparent; color:var(--err); border:1px solid var(--border); }
+.scancel.arm { background:var(--err); color:#fff; border-color:var(--err); }
+@media (prefers-color-scheme: dark) { .scancel.arm { color:#000; } }
+.pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.8em; font-weight:600; color:#fff; background:var(--pc); --pc:#1a73e8; }
+.pill.work { --pc:#d9534f; }
+.pill.unknown { --pc:#6b7280; }
+@media (prefers-color-scheme: dark) { .pill { color:#000; background:color-mix(in srgb, var(--pc) 62%, white); } }
 #setup p { color:var(--muted); font-size:.9em; margin:0 0 12px; }
 #setup input { margin-bottom:8px; }
 #cfgPrefixHelp { margin:0 0 4px; }

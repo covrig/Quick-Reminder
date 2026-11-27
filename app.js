@@ -176,6 +176,16 @@
   applyPrefixLimit();
 
   var resetTimer;
+  // Safe retry: every send carries a random id and the server never sends the same id twice. The id is kept for a
+  // retry of the SAME form content (same text, recipient, prefix and chosen time) after a failure or a timeout, so
+  // pressing Send again cannot duplicate an email that did go out. Success or any change starts a new id.
+  var attempt = null;
+  function attemptId() {
+    var timeKey = at.value ? 'date:' + at.value : wheelHour !== null ? 'hour:' + wheelHour : 'chip:' + f.p.value;
+    var key = [subject.value, msg.value, f.t.value, timeKey, prefix].join('\u0001');
+    if (!attempt || attempt.key !== key) attempt = { key: key, id: Util.newRequestId() };
+    return attempt.id;
+  }
   function fail(text) {
     btn.classList.remove('done'); btn.textContent = 'Send'; st.className = 'err'; st.textContent = text;
     buzz('error');
@@ -201,7 +211,7 @@
     fetch(cfg.url, {
       method: 'POST', redirect: 'follow', signal: ctl.signal,
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ token: cfg.token, subject: Util.buildSubject(prefix, subject.value, msg.value), body: msg.value,
+      body: JSON.stringify({ token: cfg.token, id: attemptId(), subject: Util.buildSubject(prefix, subject.value, msg.value), body: msg.value,
                              target: f.t.value, sendAt: t.date ? t.date.toISOString() : '' })
     })
       .then(function (r) { return r.json(); })
@@ -210,6 +220,7 @@
         if (!res || !res.ok) { fail(res && res.error ? res.error : 'Unexpected reply'); return; }
         btn.textContent = res.status + ' ✓'; btn.classList.add('done'); buzz('ok');
         resetTimer = setTimeout(function () { btn.textContent = 'Send'; btn.classList.remove('done'); }, 3000);
+        attempt = null;
         subject.value = ''; msg.value = ''; at.value = ''; f.p.value = 'now'; wheelReset(); updateHint(); subject.focus();
       })
       .catch(function (err) {
@@ -227,7 +238,10 @@
   var setup = document.getElementById('setup'), cfgUrl = document.getElementById('cfgUrl'),
       cfgToken = document.getElementById('cfgToken'), cfgMsg = document.getElementById('cfgMsg'),
       cfgPresets = document.getElementById('cfgPresets'), cfgPrefix = document.getElementById('cfgPrefix'),
-      cfgHaptics = document.getElementById('cfgHaptics'), gear = document.getElementById('gear');
+      cfgHaptics = document.getElementById('cfgHaptics'), gear = document.getElementById('gear'),
+      sched = document.getElementById('sched'), schedBtn = document.getElementById('schedBtn'),
+      schedList = document.getElementById('schedList'), schedState = document.getElementById('schedState'),
+      schedRefresh = document.getElementById('schedRefresh');
   function loadCfg() {
     try {
       var u = localStorage.getItem('qr_url'), k = localStorage.getItem('qr_token');
@@ -238,28 +252,104 @@
     try { var x = new URL(u); return x.protocol === 'https:' && x.hostname === 'script.google.com'; }
     catch (e) { return false; }
   }
+  // Only one screen at a time: the form, settings (gear) or scheduled reminders (clock). The button of the open
+  // screen turns into a close button (✕); the other one stays and switches screens.
+  function setButtons() {
+    var s = !setup.hidden, c = !sched.hidden;
+    gear.textContent = s ? '✕' : '⚙';
+    gear.setAttribute('aria-label', s ? 'Close settings' : 'Settings'); gear.title = s ? 'Close settings' : 'Settings';
+    schedBtn.classList.toggle('open', c); // CSS shows the clock or the ✕ (SVG elements have no 'hidden' property)
+    schedBtn.setAttribute('aria-label', c ? 'Close scheduled reminders' : 'Scheduled reminders'); schedBtn.title = c ? 'Close scheduled reminders' : 'Scheduled reminders';
+  }
   function showSetup(note) {
-    setup.hidden = false; f.hidden = true; cfgMsg.textContent = note || '';
+    sched.hidden = true; setup.hidden = false; f.hidden = true; cfgMsg.textContent = note || '';
     var c = loadCfg(); cfgUrl.value = c ? c.url : ''; cfgToken.value = '';
     cfgToken.placeholder = c ? 'Secret token (leave empty to keep)' : 'Secret token';
     cfgToken.required = !c;
     var pt = loadPresetText(); // a damaged saved value shows the defaults instead
     cfgPresets.value = pt !== null && Presets.fromText(pt).ok ? pt : Presets.DEFAULT_TEXT;
     cfgPrefix.value = prefix; cfgHaptics.checked = haptics;
-    // The top-right button becomes a close button while settings are open.
-    gear.textContent = '✕'; gear.setAttribute('aria-label', 'Close settings'); gear.title = 'Close settings';
+    setButtons();
     cfgUrl.focus();
   }
   function showForm() {
-    setup.hidden = true; f.hidden = false;
-    gear.textContent = '⚙'; gear.setAttribute('aria-label', 'Settings'); gear.title = 'Settings';
+    setup.hidden = true; sched.hidden = true; f.hidden = false;
+    setButtons();
     subject.focus();
   }
   // Close = back to the form, throwing away unsaved edits. Works on first run too.
-  function closeSettings() { if (!setup.hidden) showForm(); }
+  function closeSettings() { if (!setup.hidden || !sched.hidden) showForm(); }
   gear.addEventListener('click', function () { setup.hidden ? showSetup() : closeSettings(); });
   document.getElementById('cfgClose').addEventListener('click', closeSettings);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSettings(); });
+
+  // ---- Scheduled reminders: list what is still waiting on the server and cancel it ----
+  var OLD_BACKEND = 'The backend is too old for this. Paste the new Code.gs into Apps Script and deploy a new version.';
+  var schedGen = 0;
+  // POST one request to the Apps Script web app and read its JSON reply (same way as sending).
+  function apiPost(cfg, payload) {
+    var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, 25000);
+    payload.token = cfg.token;
+    return fetch(cfg.url, { method: 'POST', redirect: 'follow', signal: ctl.signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
+      .then(function (r) { return r.json(); })
+      .finally(function () { clearTimeout(timer); });
+  }
+  function schedMsg(text, isError) { schedState.className = isError ? 'err' : ''; schedState.textContent = text; }
+  function netMsg(err) {
+    var n = err && err.name;
+    return n === 'AbortError' ? 'Timed out. Try again.' : n === 'SyntaxError' ? 'Unexpected reply from the server.' : 'No connection.';
+  }
+  // An old backend treats list/cancel as a send and complains that subject and details are empty.
+  function replyError(res) { return res && /both empty/i.test(res.error || '') ? OLD_BACKEND : (res && res.error) || 'Unexpected reply'; }
+  function showSched() {
+    if (!loadCfg()) { showSetup('Enter your URL and token first.'); return; }
+    setup.hidden = true; f.hidden = true; sched.hidden = false; setButtons(); loadSched();
+  }
+  function loadSched() {
+    var cfg = loadCfg(), gen = ++schedGen;
+    if (!cfg) return;
+    schedMsg('Loading…', false); schedList.textContent = ''; schedRefresh.disabled = true;
+    apiPost(cfg, { action: 'list' }).then(function (res) {
+      if (gen !== schedGen) return;
+      if (res && res.ok && Array.isArray(res.items)) renderSched(res.items);
+      else schedMsg(res && res.ok ? OLD_BACKEND : replyError(res), true);
+    }).catch(function (err) {
+      if (gen === schedGen) schedMsg(netMsg(err), true);
+    }).finally(function () { if (gen === schedGen) schedRefresh.disabled = false; });
+  }
+  function renderSched(items) {
+    schedList.textContent = '';
+    schedMsg(items.length ? '' : 'Nothing scheduled.', false);
+    items.forEach(function (it) { schedList.appendChild(schedRow(it)); });
+  }
+  function schedRow(it) {
+    var li = document.createElement('li'), top = document.createElement('div'), time = document.createElement('span'),
+        pill = document.createElement('span'), sub = document.createElement('div'), cancel = document.createElement('button');
+    li.className = 'srow'; top.className = 'stop'; time.className = 'stime'; sub.className = 'ssub'; cancel.className = 'scancel'; cancel.type = 'button';
+    time.textContent = fmt(new Date(it.at));
+    pill.className = 'pill ' + (it.target === 'work' ? 'work' : it.target === 'personal' ? 'personal' : 'unknown');
+    pill.textContent = it.target === 'work' ? 'Work' : it.target === 'personal' ? 'Personal' : '?';
+    sub.textContent = it.subject; cancel.textContent = 'Cancel';
+    top.appendChild(time); top.appendChild(pill); li.appendChild(top); li.appendChild(sub); li.appendChild(cancel);
+    var armed = false, armTimer = 0;
+    function disarm() { armed = false; clearTimeout(armTimer); cancel.textContent = 'Cancel'; cancel.classList.remove('arm'); cancel.disabled = false; }
+    cancel.addEventListener('click', function () { // two taps: the first asks "Sure?", the second cancels
+      if (!armed) { armed = true; cancel.textContent = 'Sure? Tap again'; cancel.classList.add('arm'); armTimer = setTimeout(disarm, 3000); return; }
+      var cfg = loadCfg();
+      if (!cfg) { showSetup('Enter your URL and token first.'); return; }
+      clearTimeout(armTimer); cancel.disabled = true; cancel.textContent = 'Cancelling…';
+      apiPost(cfg, { action: 'cancel', id: it.id }).then(function (res) {
+        var gone = res && (res.ok || /^Not found/.test(res.error || '')); // already sent or gone: nothing left to cancel
+        if (!gone) { schedMsg(replyError(res), true); disarm(); buzz('error'); return; }
+        li.remove(); buzz('ok');
+        schedMsg(res.ok ? (schedList.children.length ? 'Cancelled.' : 'Cancelled. Nothing else is scheduled.') : res.error, !res.ok);
+      }).catch(function (err) { schedMsg(netMsg(err), true); disarm(); buzz('error'); });
+    });
+    return li;
+  }
+  schedBtn.addEventListener('click', function () { sched.hidden ? showSched() : closeSettings(); });
+  schedRefresh.addEventListener('click', loadSched);
+  document.getElementById('schedClose').addEventListener('click', closeSettings);
   setup.addEventListener('submit', function (e) {
     e.preventDefault();
     var url = cfgUrl.value.trim(), c = loadCfg(), token = cfgToken.value.trim() || (c && c.token) || '';

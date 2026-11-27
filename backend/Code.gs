@@ -11,6 +11,11 @@ var MAX_SENDS_PER_HOUR = 30;   // all sends and schedules together
 var MAX_FAILS_PER_WINDOW = 10; // wrong tokens per 15 minutes before lockout
 var MAX_TRIES = 5;             // failed delivery attempts of a scheduled mail before it is dropped + alerted
 
+// Safe retry: every send carries a random request id; the same id is never sent twice.
+var ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+var DONE_TTL = 21600;   // seconds a finished request is remembered (6 h, the CacheService maximum)
+var PENDING_TTL = 120;  // seconds an unfinished request blocks a retry (covers a crashed run)
+
 /**
  * The web app is deployed with access "Anyone", so the ONLY protection is the
  * API_TOKEN script property. There is deliberately no HTML page and no function
@@ -75,14 +80,92 @@ function handle_(e) {
     return { ok: false, error: 'Unauthorized' };
   }
 
-  if (peek_('sends_', 3600) >= MAX_SENDS_PER_HOUR) return { ok: false, error: 'Hourly limit reached' };
+  var action = (req.action === undefined || req.action === null || req.action === '') ? 'send' : String(req.action);
+  if (action === 'list') return listQueue_();
+  if (action === 'cancel') return cancelQueued_(req.id);
+  if (action !== 'send') return { ok: false, error: 'Unknown action' };
+  return send_(req);
+}
+
+/** Send or schedule one reminder, at most once per request id. */
+function send_(req) {
+  var id = null;
+  if (req.id !== undefined && req.id !== null && req.id !== '') {
+    id = String(req.id);
+    if (!ID_RE.test(id)) return { ok: false, error: 'Invalid request id' };
+    var prior = claim_(id); // null = this request is ours now
+    if (prior) {
+      if (prior.pending) return { ok: false, error: 'Still sending, check again shortly' };
+      return { ok: true, status: prior.status === 'Scheduled' ? 'Already scheduled' : 'Already sent', duplicate: true };
+    }
+  }
+  if (peek_('sends_', 3600) >= MAX_SENDS_PER_HOUR) {
+    if (id) release_(id);
+    return { ok: false, error: 'Hourly limit reached' };
+  }
   try {
-    var status = sendReminder_(req.subject, req.body, req.target, req.sendAt);
+    var status = sendReminder_(req.subject, req.body, req.target, req.sendAt, id);
     bump_('sends_', 3600);
+    if (id) finish_(id, status);
     return { ok: true, status: status };
   } catch (err) {
+    if (id) release_(id); // a failed attempt must not block the retry
     return { ok: false, error: String(err && err.message || err) };
   }
+}
+
+/** Marks a request id as being handled. Returns null if it is new, else what is known about it. */
+function claim_(id) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var cache = CacheService.getScriptCache(), v = cache.get('req_' + id);
+    if (v) return JSON.parse(v);
+    cache.put('req_' + id, JSON.stringify({ pending: true }), PENDING_TTL);
+    return null;
+  } finally {
+    lock.releaseLock();
+  }
+}
+function finish_(id, status) { CacheService.getScriptCache().put('req_' + id, JSON.stringify({ done: true, status: status }), DONE_TTL); }
+function release_(id) { CacheService.getScriptCache().remove('req_' + id); }
+function newId_() { return 'q' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36); }
+
+/** Scheduled reminders still waiting: id, time, recipient label and subject only (no addresses, no details). */
+function listQueue_() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var q = readQueue_(), changed = false, p = PropertiesService.getScriptProperties();
+    var work = p.getProperty('WORK_EMAIL'), personal = p.getProperty('PERSONAL_EMAIL');
+    var items = q.map(function (it) {
+      if (!it.id) { it.id = newId_(); changed = true; } // items queued by older versions get an id now
+      var body = it.body !== undefined ? it.body : it.msg;
+      var target = it.target || (it.addr === work ? 'work' : it.addr === personal ? 'personal' : 'unknown');
+      return { id: it.id, at: it.at, target: target, subject: String(it.subject || makeSubject_(body)).slice(0, MAX_SUBJECT) };
+    });
+    if (changed) writeQueue_(q);
+    items.sort(function (a, b) { return a.at - b.at; });
+    return { ok: true, items: items };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function cancelQueued_(id) {
+  id = String(id === undefined || id === null ? '' : id);
+  if (!ID_RE.test(id)) return { ok: false, error: 'Invalid request id' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var q = readQueue_(), rest = q.filter(function (it) { return it.id !== id; });
+    if (rest.length === q.length) return { ok: false, error: 'Not found (maybe already sent)' };
+    writeQueue_(rest);
+  } finally {
+    lock.releaseLock();
+  }
+  release_(id); // the same request id may be used again after a cancel
+  return { ok: true, status: 'Cancelled' };
 }
 
 function getAddress_(target) {
@@ -109,9 +192,10 @@ function deliver_(addr, subject, body) {
  * @param {string} body    email body (may be empty if subject is given)
  * @param {string} target  'personal' | 'work'
  * @param {string} sendAt  optional ISO datetime ('' = send now)
+ * @param {string} id      request id (used as the queue id of a scheduled reminder), or null
  * @return {string} status text shown to the user
  */
-function sendReminder_(subject, body, target, sendAt) {
+function sendReminder_(subject, body, target, sendAt, id) {
   subject = String(subject || '').trim();
   body = String(body || '').trim();
   if (!subject && !body) throw new Error('Subject and details are both empty');
@@ -124,7 +208,7 @@ function sendReminder_(subject, body, target, sendAt) {
     var when = new Date(sendAt).getTime();
     if (isNaN(when)) throw new Error('Invalid date');
     if (when > Date.now()) {
-      enqueue_({ subject: subject, body: body, addr: addr, at: when });
+      enqueue_({ id: id || newId_(), subject: subject, body: body, addr: addr, target: target, at: when });
       return 'Scheduled';
     }
   }

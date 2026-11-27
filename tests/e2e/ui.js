@@ -283,6 +283,139 @@ module.exports = async function run(pw) {
       await nv.browser.close();
     }
 
+    // ---------- safe retry: the request id ----------
+    {
+      const { browser, page, problems } = await newPage(pw, base);
+      const r = await page.evaluate(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms)), $ = (id) => document.getElementById(id), f = $('f'), subj = $('subject'), out = {};
+        const bodies = []; let rel;
+        window.fetch = (u, o) => new Promise((res, rej) => { bodies.push(JSON.parse(o.body)); rel = { ok: (d) => res({ json: () => Promise.resolve(d) }), fail: (e) => rej(e) }; });
+        const go = async (s, how) => { subj.value = s; f.requestSubmit(); await wait(20); how(); await wait(80); return bodies[bodies.length - 1].id; };
+        const timeout = () => rel.fail(Object.assign(new Error('a'), { name: 'AbortError' }));
+        const good = () => rel.ok({ ok: true, status: 'Sent' });
+        const ID = /^[A-Za-z0-9_-]{8,64}$/;
+        const a = await go('call dentist', timeout), b = await go('call dentist', timeout);
+        out.valid = ID.test(a); out.sameRetry = a === b;
+        out.afterTimeoutBtn = { text: $('btn').textContent, disabled: $('btn').disabled };
+        const c = await go('call dentist now', timeout); out.newOnTextChange = c !== b;
+        const d = await go('call dentist now', timeout); out.sameAgain = d === c;
+        document.querySelector('input[name=p][value="3h"]').click(); const e1 = await go('call dentist now', timeout); out.newOnTimeButton = e1 !== d;
+        const e2 = await go('call dentist now', timeout); out.sameTimeButtonRetry = e2 === e1;
+        document.querySelectorAll('.wheel-item')[4].click(); await wait(600); const w1 = await go('call dentist now', timeout); out.newOnWheel = w1 !== e2;
+        document.querySelector('input[name=p][value="now"]').click(); document.querySelector('input[name=t][value=work]').click(); const w2 = await go('call dentist now', timeout); out.newOnRecipient = w2 !== w1;
+        const at = $('at'); at.value = '2026-12-01T10:00'; at.dispatchEvent(new Event('input')); const w3 = await go('call dentist now', timeout); out.newOnDate = w3 !== w2;
+        // success ends the attempt: the next identical send is a NEW request
+        document.querySelector('input[name=t][value=personal]').click(); at.value = ''; at.dispatchEvent(new Event('input'));
+        const s1 = await go('hello there', timeout), s2 = await go('hello there', good); out.retryThenSuccessSame = s1 === s2; await wait(3100);
+        const s3 = await go('hello there', good); out.newAfterSuccess = s3 !== s2; await wait(3100);
+        // the server's answers
+        subj.value = 'dup'; f.requestSubmit(); await wait(20); rel.ok({ ok: true, status: 'Already sent', duplicate: true }); await wait(80);
+        out.duplicate = { text: $('btn').textContent, done: $('btn').classList.contains('done') }; await wait(3100);
+        subj.value = 'busy'; f.requestSubmit(); await wait(20); rel.ok({ ok: false, error: 'Still sending, check again shortly' }); await wait(80);
+        out.busy = { status: $('status').textContent, btn: $('btn').textContent, disabled: $('btn').disabled };
+        // ten fresh sends give ten different ids
+        const many = []; for (let i = 0; i < 10; i++) many.push(await go('unique ' + i, good)); out.unique = new Set(many).size; await wait(100);
+        return out;
+      });
+      check('retry id: valid for the server; kept for an identical retry after a timeout; the button is usable again', r.valid && r.sameRetry && r.afterTimeoutBtn.text === 'Send' && !r.afterTimeoutBtn.disabled && r.sameAgain, r);
+      check('retry id: a new id when the text, time button, wheel hour, recipient or date changes', r.newOnTextChange && r.newOnTimeButton && r.newOnWheel && r.newOnRecipient && r.newOnDate && r.sameTimeButtonRetry, r);
+      check('retry id: the same id until it works, then a NEW id for the next identical send', r.retryThenSuccessSame && r.newAfterSuccess, r);
+      check('server answers "Already sent" -> shown as success; "Still sending" -> shown as an error, button usable', r.duplicate.text === 'Already sent ✓' && r.duplicate.done && /Still sending/.test(r.busy.status) && r.busy.btn === 'Send' && !r.busy.disabled, [r.duplicate, r.busy]);
+      check('retry id: ten different sends use ten different ids', r.unique === 10, r.unique);
+      check('retry id: no script errors or CSP violations', problems.errors.length === 0 && (await page.evaluate(() => window.__viol || [])).length === 0, problems.errors);
+      await browser.close();
+    }
+
+    // ---------- scheduled reminders screen ----------
+    {
+      const { browser, page, problems } = await newPage(pw, base, { init: RECORD });
+      const r = await page.evaluate(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms)), $ = (id) => document.getElementById(id), out = {};
+        const now = Date.now(), calls = []; let hold = null;
+        window.__items = [{ id: 'idaaaaaa1', at: now + 3600e3, target: 'work', subject: 'Call dentist' }, { id: 'idcccccc3', at: now + 7200e3, target: 'unknown', subject: 'Mystery' }, { id: 'idbbbbbb2', at: now + 2 * 86400e3, target: 'personal', subject: 'Pay rent' }];
+        window.__mode = 'ok';
+        window.fetch = (u, o) => {
+          const b = JSON.parse(o.body); calls.push(b);
+          const reply = () => {
+            if (window.__mode === 'net') return Promise.reject(new TypeError('Failed to fetch'));
+            if (window.__mode === 'abort') return Promise.reject(Object.assign(new Error('a'), { name: 'AbortError' }));
+            if (window.__mode === 'nonjson') return Promise.resolve({ json: () => Promise.reject(new SyntaxError('x')) });
+            if (window.__mode === 'old') return Promise.resolve({ json: () => Promise.resolve({ ok: false, error: 'Subject and details are both empty' }) });
+            if (window.__mode === 'oldsend') return Promise.resolve({ json: () => Promise.resolve({ ok: true, status: 'Sent' }) });
+            if (window.__mode === 'locked') return Promise.resolve({ json: () => Promise.resolve({ ok: false, error: 'Locked, try again later' }) });
+            if (b.action === 'list') return Promise.resolve({ json: () => Promise.resolve({ ok: true, items: window.__items.slice() }) });
+            if (b.action === 'cancel') {
+              if (window.__mode === 'cancel-unauth') return Promise.resolve({ json: () => Promise.resolve({ ok: false, error: 'Unauthorized' }) });
+              if (window.__mode === 'cancel-gone') { window.__items = window.__items.filter((i) => i.id !== b.id); return Promise.resolve({ json: () => Promise.resolve({ ok: false, error: 'Not found (maybe already sent)' }) }); }
+              window.__items = window.__items.filter((i) => i.id !== b.id); return Promise.resolve({ json: () => Promise.resolve({ ok: true, status: 'Cancelled' }) });
+            }
+            return Promise.resolve({ json: () => Promise.resolve({ ok: false, error: 'Unknown action' }) });
+          };
+          return hold ? hold(reply) : reply();
+        };
+        const vis = () => ({ form: !$('f').hidden, setup: !$('setup').hidden, sched: !$('sched').hidden, gear: $('gear').textContent, clockShown: getComputedStyle($('schedIco')).display !== 'none', xShown: getComputedStyle($('schedX')).display !== 'none' });
+        const rows = () => [...document.querySelectorAll('.srow')].map((li) => ({ time: li.querySelector('.stime').textContent, pill: li.querySelector('.pill').textContent, sub: li.querySelector('.ssub').textContent, btn: li.querySelector('.scancel').textContent }));
+        const state = () => ({ text: $('schedState').textContent, err: $('schedState').classList.contains('err') });
+        const open = async () => { $('schedBtn').click(); await wait(60); };
+
+        out.header = { clock: $('schedBtn').getAttribute('aria-label'), gear: $('gear').getAttribute('aria-label') };
+        await open(); out.opened = vis(); out.rows = rows(); out.listCall = calls[0]; out.stateAfterLoad = state();
+        // one screen at a time
+        $('gear').click(); out.settingsOver = vis(); $('schedBtn').click(); await wait(60); out.schedOver = vis();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); out.escape = vis();
+        await open(); $('schedClose').click(); out.closeBtn = vis(); await open(); $('schedBtn').click(); out.topX = vis();
+        // refresh
+        await open(); const n = calls.length; $('schedRefresh').click(); await wait(60); out.refresh = { requests: calls.length - n, last: calls[calls.length - 1].action, rows: rows().length };
+        // cancel: two taps, the first only arms the button
+        const first = () => document.querySelector('.srow .scancel'); window.__vib.length = 0;
+        const c0 = calls.length; first().click(); out.armed = { text: first().textContent, requests: calls.length - c0 };
+        await wait(3300); out.disarmed = { text: first().textContent, requests: calls.length - c0 };
+        first().click(); first().click(); await wait(120);
+        const cancelCall = calls[calls.length - 1]; out.cancelled = { call: cancelCall, rows: rows().map((x) => x.sub), state: state(), vib: window.__vib.slice() };
+        // server refuses: the row stays and the button is usable again
+        window.__mode = 'cancel-unauth'; window.__vib.length = 0; first().click(); first().click(); await wait(120);
+        out.refused = { rows: rows().length, btn: first().textContent, disabled: first().disabled, state: state(), vib: window.__vib.slice() }; window.__mode = 'ok';
+        // already sent / gone: the row disappears and the server's text is shown
+        window.__mode = 'cancel-gone'; first().click(); first().click(); await wait(120);
+        out.gone = { rows: rows().length, state: state() }; window.__mode = 'ok';
+        // cancel the last one: empty message; refresh keeps it empty
+        first().click(); first().click(); await wait(120); out.last = { rows: rows().length, state: state() };
+        $('schedRefresh').click(); await wait(80); out.emptyAfterRefresh = { rows: rows().length, state: state() };
+        $('schedClose').click();
+        // failures when loading
+        for (const m of ['net', 'abort', 'nonjson', 'locked', 'old', 'oldsend']) { window.__mode = m; await open(); out['load_' + m] = { state: state(), rows: rows().length, refreshEnabled: !$('schedRefresh').disabled }; $('schedClose').click(); }
+        window.__mode = 'ok';
+        // a slow, outdated reply must not overwrite the newer one
+        window.__items = [{ id: 'idnewone01', at: now + 3600e3, target: 'work', subject: 'NEW list' }]; let releaseSlow;
+        hold = (reply) => { hold = null; return new Promise((res) => { releaseSlow = () => res(Promise.resolve({ json: () => Promise.resolve({ ok: true, items: [{ id: 'idoldone01', at: now, target: 'work', subject: 'OLD list' }] }) })); }); };
+        await open(); $('schedBtn').click(); await open(); await wait(80); releaseSlow(); await wait(80);
+        out.stale = rows().map((x) => x.sub); $('schedClose').click();
+        // no settings saved: opens the settings with a note, no request
+        const keep = [localStorage.getItem('qr_url'), localStorage.getItem('qr_token')]; localStorage.removeItem('qr_url'); localStorage.removeItem('qr_token'); const c1 = calls.length;
+        $('schedBtn').click(); await wait(60); out.noConfig = { vis: vis(), note: $('cfgMsg').textContent, requests: calls.length - c1 };
+        localStorage.setItem('qr_url', keep[0]); localStorage.setItem('qr_token', keep[1]);
+        return out;
+      });
+      check('header has a "Scheduled reminders" button next to the settings gear', r.header.clock === 'Scheduled reminders' && r.header.gear === 'Settings', r.header);
+      check('opening it asks the server for the list (token + action only) and shows the form-free screen; its button becomes ✕', r.opened.sched && !r.opened.form && !r.opened.setup && r.opened.xShown && !r.opened.clockShown && r.opened.gear === '⚙' && Object.keys(r.listCall).sort().join() === 'action,token' && r.listCall.action === 'list', [r.opened, r.listCall]);
+      check('rows: time, recipient label (Work / Personal / ?) and subject, in the server order, each with a Cancel button',
+        r.rows.length === 3 && r.rows[0].sub === 'Call dentist' && r.rows[0].pill === 'Work' && r.rows[1].pill === '?' && r.rows[2].pill === 'Personal' && r.rows.every((x) => x.btn === 'Cancel' && x.time.length > 3) && r.stateAfterLoad.text === '', r.rows);
+      check('only one screen at a time: the gear switches to settings, the clock back; Escape, Close and the ✕ return to the form',
+        r.settingsOver.setup && !r.settingsOver.sched && r.settingsOver.gear === '✕' && r.settingsOver.clockShown && r.schedOver.sched && !r.schedOver.setup && r.escape.form && !r.escape.sched && r.closeBtn.form && r.topX.form && r.topX.clockShown, [r.settingsOver, r.schedOver, r.escape, r.closeBtn, r.topX]);
+      check('Refresh asks the server again', r.refresh.requests === 1 && r.refresh.last === 'list' && r.refresh.rows === 3, r.refresh);
+      check('cancel needs two taps: "Sure? Tap again", no request yet; it disarms itself after 3 s', r.armed.text === 'Sure? Tap again' && r.armed.requests === 0 && r.disarmed.text === 'Cancel' && r.disarmed.requests === 0, [r.armed, r.disarmed]);
+      check('second tap cancels: request {action cancel, id, token}, row removed, message, short buzz', r.cancelled.call.action === 'cancel' && r.cancelled.call.id === 'idaaaaaa1' && r.cancelled.rows.join() === 'Mystery,Pay rent' && r.cancelled.state.text === 'Cancelled.' && JSON.stringify(r.cancelled.vib) === '[60]', r.cancelled);
+      check('a refused cancel keeps the row, re-enables the button, shows the error and double-buzzes', r.refused.rows === 2 && r.refused.btn === 'Cancel' && !r.refused.disabled && r.refused.state.err && r.refused.state.text === 'Unauthorized' && JSON.stringify(r.refused.vib) === '[[100,80,100]]', r.refused);
+      check('"Not found (maybe already sent)" removes the row and shows the server\'s text', r.gone.rows === 1 && r.gone.state.err && /Not found/.test(r.gone.state.text), r.gone);
+      check('cancelling the last one says nothing else is scheduled; Refresh shows "Nothing scheduled."', r.last.rows === 0 && /Nothing else is scheduled/.test(r.last.state.text) && r.emptyAfterRefresh.state.text === 'Nothing scheduled.' && r.emptyAfterRefresh.rows === 0, [r.last, r.emptyAfterRefresh]);
+      check('load failures: no connection, timeout, unreadable reply, lockout; the server error text is shown and Refresh is usable', r.load_net.state.text === 'No connection.' && r.load_abort.state.text === 'Timed out. Try again.' && r.load_nonjson.state.text === 'Unexpected reply from the server.' && r.load_locked.state.text === 'Locked, try again later' && [r.load_net, r.load_abort, r.load_nonjson, r.load_locked].every((x) => x.state.err && x.rows === 0 && x.refreshEnabled), r);
+      check('an old backend (does not know list/cancel) gets a clear "paste the new Code.gs" message', /too old.*new Code\.gs/.test(r.load_old.state.text) && r.load_old.state.err && /too old/.test(r.load_oldsend.state.text), [r.load_old, r.load_oldsend]);
+      check('a slow, outdated reply never replaces a newer list', r.stale.join() === 'NEW list', r.stale);
+      check('without saved settings the clock opens the settings with a note and sends nothing', r.noConfig.vis.setup && !r.noConfig.vis.sched && /URL and token/.test(r.noConfig.note) && r.noConfig.requests === 0, r.noConfig);
+      check('scheduled screen: no script errors or CSP violations', problems.errors.length === 0 && (await page.evaluate(() => window.__viol || [])).length === 0, [problems.errors, await page.evaluate(() => window.__viol)]);
+      await browser.close();
+    }
+
     // ---------- dark mode paints a dark page ----------
     {
       const { browser, page } = await newPage(pw, base, { scheme: 'dark' });

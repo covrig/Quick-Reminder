@@ -195,13 +195,40 @@ module.exports = async function run(pw) {
       await clearVib(); await swipe(dir);
       const s2 = await state();
       check('wheel: swiping 3 hours selects that hour; chips deselect; hint shows the time', s2.active && s2.on === wantIdx && s2.checked === 0 && /^Will send: /.test(s2.hint), { startIdx, wantIdx, s2 });
-      check('wheel: one 10 ms tick per hour passed (3 hours = 3 ticks)', s2.vib.length === 3 && s2.vib.every((v) => v === 10), s2.vib);
+      check('wheel: one 25 ms tick per hour passed (3 hours = 3 ticks)', s2.vib.length === 3 && s2.vib.every((v) => v === 25), s2.vib);
 
       // --- tap an hour two places away: slides there, ticks twice, selects ---
       await clearVib(); const before = (await state()).on; const tapTo = before + (before > 7 ? -2 : 2);
       await tapItem(tapTo);
       const s3 = await state();
-      check('wheel: tapping an hour slides it to the centre and selects it (a tick for the hours it passes)', s3.on === tapTo && s3.active && s3.vib.length >= 1 && s3.vib.length <= 2 && s3.vib.every((v) => v === 10), s3);
+      check('wheel: tapping an hour slides it to the centre and selects it (a tick for the hours it passes)', s3.on === tapTo && s3.active && s3.vib.length >= 1 && s3.vib.length <= 2 && s3.vib.every((v) => v === 25), s3);
+
+      // --- reliability: every kind of touch must select the hour and click once per hour passed ---
+      // (regression: a finger resting 500 ms or more before dragging was ignored completely; quick swipes gave no click)
+      const toFirstHour = async () => { await page.evaluate(() => { document.querySelector('input[name=p][value=now]').click(); const t = document.getElementById('wheelTrack'), f = t.firstElementChild; t.style.scrollSnapType = 'none'; t.scrollLeft = f.offsetLeft + f.offsetWidth / 2 - t.clientWidth / 2; setTimeout(() => (t.style.scrollSnapType = ''), 0); window.__vib.length = 0; }); await page.waitForTimeout(300); };
+      const touchDrag = async (holdMs, dx, pauseAtStep) => {
+        const b = await trackBox(), x0 = b.x + b.width / 2, y0 = b.y + b.height / 2, steps = 16;
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] }); await page.waitForTimeout(holdMs);
+        for (let i = 1; i <= steps; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + dx * i / steps, y: y0 }] }); await page.waitForTimeout(18); if (i === pauseAtStep) await page.waitForTimeout(900); }
+        await page.waitForTimeout(100); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await page.waitForTimeout(800);
+      };
+      const three = 3 * iw, ticksOf = async () => (await state()).vib;
+      const rel = {};
+      for (const hold of [0, 300, 600, 1200]) { await toFirstHour(); await touchDrag(hold, -three); const s = await state(); rel['rest' + hold] = { on: s.on, active: s.active, ticks: s.vib.length }; }
+      check('finger resting 0 / 300 / 600 / 1200 ms before dragging: always selects the hour 3 further on, with 3 ticks', Object.values(rel).every((x) => x.on === 3 && x.active && x.ticks === 3), rel);
+      await toFirstHour(); await touchDrag(0, -three, 8); const sp = await state();
+      check('a drag with a long pause in the middle (finger held still 0.9 s) still ticks 3 times and selects', sp.on === 3 && sp.active && sp.vib.length === 3, sp);
+      await toFirstHour();
+      const quick = async (dx) => { const b = await trackBox(), x0 = b.x + b.width / 2, y0 = b.y + b.height / 2; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] }); for (let i = 1; i <= 6; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + dx * i / 6, y: y0 }] }); await page.waitForTimeout(12); } await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
+      await quick(-2 * iw); await page.waitForTimeout(60); await quick(-2 * iw); await page.waitForTimeout(1200); const sq = await state();
+      check('two quick swipes back to back: both count (4 hours further, at least one click per swipe, selected)', sq.on === 4 && sq.active && sq.vib.length >= 2 && sq.vib.every((v) => v === 25), sq);
+      await toFirstHour(); await tapItem(2); const afterTap = (await state()).on; await touchDrag(0, -2 * iw); const st2 = await state();
+      check('a swipe right after tapping an hour works too', afterTap === 2 && st2.on === 4 && st2.active && st2.vib.length >= 2, [afterTap, st2]);
+      await toFirstHour(); await page.evaluate(() => { const t = document.getElementById('wheelTrack'); t.dispatchEvent(new TouchEvent('touchstart', { touches: [], bubbles: true })); }); await page.waitForTimeout(150); await page.evaluate(() => { document.getElementById('wheelTrack').dispatchEvent(new TouchEvent('touchend', { touches: [], bubbles: true })); }); await page.waitForTimeout(700);
+      await page.evaluate(() => { const t = document.getElementById('wheelTrack'); t.scrollLeft += 96; }); await page.waitForTimeout(500); const idle = await state();
+      check('a touch that never scrolled (tap / long press) does not leave the wheel live: a later script scroll neither selects nor clicks', !idle.active && idle.vib.length === 0, idle);
+
+      await tapItem(5); await page.waitForTimeout(300); await clearVib(); // realign: the script scroll above left the highlight and the position apart
 
       // --- the other ways of choosing a time clear the wheel, and the wheel clears them ---
       await page.evaluate(() => document.querySelector('input[name=p][value="3h"]').click());

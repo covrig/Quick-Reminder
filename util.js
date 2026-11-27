@@ -71,7 +71,7 @@
   }
 
   // Vibration patterns in milliseconds (navigator.vibrate). Short ticks for the wheel, distinct buzzes for results.
-  var HAPTICS = { tick: 10, tap: 20, ok: 60, error: [100, 80, 100], test: [150, 80, 150] };
+  var HAPTICS = { tick: 25, press: 15, tap: 20, ok: 60, error: [100, 80, 100], test: [150, 80, 150] };
   function hapticPattern(kind) {
     if (!Object.prototype.hasOwnProperty.call(HAPTICS, kind)) return null;
     var p = HAPTICS[kind];

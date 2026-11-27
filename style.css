@@ -1,4 +1,4 @@
-:root { --build:"a69424db"; }
+:root { --build:"712ab99e"; }
 /* The app is ALWAYS dark on purpose. The manifest holds ONE launch colour and Android paints it around the page
    (launch screen, status bar, the strip under the keyboard, behind the gesture handle). If the page changed with the
    phone's light/dark mode, the two would differ and a light edge or flash would show. See README "Colours must match". */
@@ -89,13 +89,16 @@ input[type=datetime-local]::-webkit-date-and-time-value { text-align:center; }
 .wheel-track::-webkit-scrollbar { display:none; }
 .wheel:has(.wheel-track:focus-visible) { outline:2px solid var(--accent); outline-offset:2px; border-radius:12px; }
 .wheel-track:focus { outline:none; }
-.wheel-item { position:relative; flex:0 0 var(--iw); scroll-snap-align:center; scroll-snap-stop:always; padding:16px 0;
-              text-align:center; font-weight:600; font-size:.9em; color:var(--muted); user-select:none; -webkit-user-select:none;
+.wheel-item { position:relative; flex:0 0 var(--iw); scroll-snap-align:center; scroll-snap-stop:always; padding:11px 0;
+              text-align:center; font-weight:600; font-size:1em; color:var(--muted); user-select:none; -webkit-user-select:none;
               -webkit-tap-highlight-color:transparent; transition:transform .12s ease, color .12s ease; }
+.wheel-item .hh, .wheel-item .ap { display:block; line-height:1.15; }
+.wheel-item .hh { font-size:1.15em; }
+.wheel-item .ap { font-size:.68em; letter-spacing:.05em; opacity:.85; }
 .wheel-item.on { transform:scale(1.2); color:var(--fg); }
 .wheel.active .wheel-item.on { color:#000; }
 /* small dot: this hour has already passed today, so it means tomorrow */
-.wheel-item.tmrw::after { content:''; position:absolute; bottom:8px; left:50%; width:4px; height:4px; margin-left:-2px; border-radius:50%; background:currentColor; opacity:.5; }
+.wheel-item.tmrw::after { content:''; position:absolute; bottom:2px; left:50%; width:4px; height:4px; margin-left:-2px; border-radius:50%; background:currentColor; opacity:.5; }
 @media (prefers-reduced-motion: reduce) { .wheel-item, .wheel-marker { transition:none; } }
 .check { display:flex; align-items:center; gap:12px; min-height:48px; margin-top:16px; }
 .check input { width:24px; height:24px; flex:none; margin:0; accent-color:var(--accent); }

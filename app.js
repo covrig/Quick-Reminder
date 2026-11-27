@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 'a69424db'; // build stamp, written by tools/stamp.js
+  var BUILD = '712ab99e'; // build stamp, written by tools/stamp.js
 
   var f = document.getElementById('f'), st = document.getElementById('status'),
       btn = document.getElementById('btn'), at = document.getElementById('at'),
@@ -48,7 +48,9 @@
   // It starts dimmed at the next hour. Only a real touch / key / tap on it makes it active; when the strip stops
   // moving, the hour under the centre marker becomes the send time (like a time button, "next time it is that hour").
   var wheel = document.getElementById('wheel'), track = document.getElementById('wheelTrack');
-  var wheelHour = null, userActive = false, lastIdx = -1, lastTick = 0, lastScrollAt = 0, scrollRaf = 0, settleTimer = 0, idleTimer = 0;
+  // userScroll: scroll events are the user's (from touch-down / mouse wheel / key / tap until the strip has settled).
+  // touching: fingers currently on the screen. Initial positioning happens with userScroll false, so it never ticks or selects.
+  var wheelHour = null, userScroll = false, touching = 0, scrolledSinceTouch = false, lastIdx = -1, lastTick = 0, settleTimer = 0, quietTimer = 0;
   var hasScrollEnd = 'onscrollend' in window;
   var reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -59,7 +61,10 @@
       var d = document.createElement('div');
       d.className = 'wheel-item' + (Wheel.isTomorrow(h, now) ? ' tmrw' : '');
       d.setAttribute('role', 'option');
-      d.textContent = Wheel.label(h);
+      // big hour number, small AM/PM underneath (fits a narrow slot); the real space keeps textContent = "10 AM"
+      var parts = Wheel.label(h).split(' '), hh = document.createElement('span'), ap = document.createElement('span');
+      hh.className = 'hh'; hh.textContent = parts[0]; ap.className = 'ap'; ap.textContent = parts[1];
+      d.appendChild(hh); d.appendChild(document.createTextNode(' ')); d.appendChild(ap);
       track.appendChild(d);
     });
   }
@@ -74,47 +79,54 @@
     wheel.style.setProperty('--c', Wheel.color(Wheel.HOURS[i]));
   }
   function goTo(i) { track.scrollTo({ left: posOf(i), behavior: reduceMotion ? 'auto' : 'smooth' }); }
-  function wheelReset() { wheelHour = null; userActive = false; wheel.classList.remove('active'); }
+  function wheelReset() { wheelHour = null; userScroll = false; wheel.classList.remove('active'); }
   function commit(i) { // the user picked this hour
-    wheelHour = Wheel.HOURS[i]; userActive = false; lastIdx = i; mark(i);
+    wheelHour = Wheel.HOURS[i]; userScroll = false; lastIdx = i; mark(i);
     at.value = ''; chips.querySelectorAll('input').forEach(function (r) { r.checked = false; });
     wheel.classList.add('active'); updateHint();
   }
-  function settle() { if (userActive) commit(centred()); }
-  function armIdleWatch() { // a touch that never turned into a scroll must not stay "active" forever
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(function () {
-      if (userActive && performance.now() - lastScrollAt > 450) userActive = false; else if (userActive) armIdleWatch();
-    }, 500);
-  }
-  function touchedWheel() { userActive = true; armIdleWatch(); }
-  function tick() { var t = performance.now(); if (t - lastTick < 25) return; lastTick = t; buzz('tick'); }
+  // The strip has come to rest (scrollend, or quiet for a moment with no finger on it): the centred hour is the pick.
+  function settle() { if (userScroll && !touching) commit(centred()); }
+  function userStarts() { userScroll = true; lastIdx = centred(); clearTimeout(quietTimer); } // lastIdx = where the strip really is now
+  // At most one tick per 45 ms: the pulse itself lasts 25 ms and a second call would cut it short.
+  function tick() { var t = performance.now(); if (t - lastTick < 45) return; lastTick = t; buzz('tick'); }
 
   renderWheel();
   var start = Wheel.startIndex(Date.now());
   track.scrollLeft = posOf(start); lastIdx = start; mark(start);
-  ['pointerdown', 'touchstart', 'wheel'].forEach(function (n) { track.addEventListener(n, touchedWheel, { passive: true }); });
+  track.addEventListener('touchstart', function (e) {
+    touching = e.touches.length; scrolledSinceTouch = false; clearTimeout(settleTimer); userStarts();
+  }, { passive: true });
+  function touchEnded(e) {
+    touching = e.touches.length;
+    if (touching) return;
+    if (scrolledSinceTouch) { clearTimeout(settleTimer); settleTimer = setTimeout(settle, 160); } // normally scrollend comes first
+    // a touch that never turned into a scroll (a tap or a long press) must not leave the wheel "live"
+    clearTimeout(quietTimer); quietTimer = setTimeout(function () { if (!touching && !scrolledSinceTouch) userScroll = false; }, 350);
+  }
+  track.addEventListener('touchend', touchEnded, { passive: true });
+  track.addEventListener('touchcancel', touchEnded, { passive: true });
+  track.addEventListener('wheel', userStarts, { passive: true });
   track.addEventListener('scroll', function () {
-    if (!userActive) return; // initial positioning and layout changes never tick or select
-    lastScrollAt = performance.now();
-    if (!scrollRaf) scrollRaf = requestAnimationFrame(function () {
-      scrollRaf = 0; var i = centred();
-      if (i !== lastIdx) { lastIdx = i; mark(i); tick(); }
-    });
-    if (!hasScrollEnd) { clearTimeout(settleTimer); settleTimer = setTimeout(settle, 140); }
+    if (!userScroll) return;
+    scrolledSinceTouch = true;
+    // checked on every scroll event (not once per animation frame): a quick flick can start and finish between two frames
+    var i = centred();
+    if (i !== lastIdx) { lastIdx = i; mark(i); tick(); }
+    clearTimeout(settleTimer); settleTimer = setTimeout(settle, 160); // fallback if scrollend never arrives
   }, { passive: true });
   if (hasScrollEnd) track.addEventListener('scrollend', settle);
   track.addEventListener('click', function (e) { // tap an hour: slide it to the centre
     var el = e.target.closest && e.target.closest('.wheel-item');
     if (!el) return;
     var i = Array.prototype.indexOf.call(track.children, el);
-    touchedWheel();
+    userStarts();
     if (Math.abs(track.scrollLeft - posOf(i)) < 2) commit(i); else goTo(i);
   });
   track.addEventListener('keydown', function (e) { // keyboard / switch access
     var i = centred(), n = Wheel.HOURS.length - 1, to = e.key === 'ArrowLeft' ? i - 1 : e.key === 'ArrowRight' ? i + 1 : e.key === 'Home' ? 0 : e.key === 'End' ? n : null;
     if (to === null) return;
-    e.preventDefault(); to = Math.max(0, Math.min(n, to)); touchedWheel();
+    e.preventDefault(); to = Math.max(0, Math.min(n, to)); userStarts();
     if (to === i && wheelHour === null) commit(i); else if (to !== i) goTo(to);
   });
 

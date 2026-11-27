@@ -280,7 +280,9 @@ assert.ok(parseInt(wcols[15].slice(5, 7), 16) > parseInt(wcols[15].slice(1, 3), 
 }
 
 // --- haptic patterns ---
-assert.strictEqual(U.hapticPattern('tick'), 10);
+assert.strictEqual(U.hapticPattern('tick'), 25, 'wheel tick: 25 ms (was 10 ms, felt too weak)');
+assert.strictEqual(U.hapticPattern('press'), 15, 'light tick for every button');
+assert.ok(U.hapticPattern('tick') > U.hapticPattern('press') && U.hapticPattern('press') < U.hapticPattern('tap') && U.hapticPattern('tap') < U.hapticPattern('ok'), 'strength order: button < Send start < success');
 assert.strictEqual(U.hapticPattern('tap'), 20);
 assert.strictEqual(U.hapticPattern('ok'), 60);
 assert.deepStrictEqual(U.hapticPattern('error'), [100, 80, 100]);
@@ -289,7 +291,7 @@ assert.strictEqual(U.hapticPattern('nope'), null);
 assert.strictEqual(U.hapticPattern('constructor'), null, 'inherited object keys are not patterns');
 assert.strictEqual(U.hapticPattern(undefined), null);
 assert.notStrictEqual(U.hapticPattern('error'), U.hapticPattern('error'), 'a copy is returned: callers cannot change the pattern');
-['tick', 'tap', 'ok', 'error', 'test'].forEach((k) => { const p = [].concat(U.hapticPattern(k)); assert.ok(p.every((n) => Number.isInteger(n) && n > 0) && p.reduce((a, b) => a + b, 0) <= 1000, k + ' pattern is sane and under 1 s'); });
+['tick', 'press', 'tap', 'ok', 'error', 'test'].forEach((k) => { const p = [].concat(U.hapticPattern(k)); assert.ok(p.every((n) => Number.isInteger(n) && n > 0) && p.reduce((a, b) => a + b, 0) <= 1000, k + ' pattern is sane and under 1 s'); });
 assert.ok(U.hapticPattern('error').length > 1 && !Array.isArray(U.hapticPattern('ok')), 'error is a double buzz, ok a single one');
 
 // ===================== build stamp (tools/stamp.js) =====================

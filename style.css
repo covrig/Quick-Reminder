@@ -66,22 +66,6 @@ button:disabled { opacity:.6; }
 /* The Send button turns green for a few seconds after a successful send. */
 #btn { transition:background-color .2s ease; }
 #btn.done { background:var(--ok); }
-/* Launch cover: stays for 0.2 s after the first painted frame (app.js adds .go then), fades out and stops
-   catching taps (visibility:hidden). If scripts ever fail, the slow animation below still removes it after 1.5 s. */
-#cover { position:fixed; inset:0; z-index:100; background:var(--bg); display:grid; place-items:center;
-         animation:cover-out .15s ease 1.5s forwards; }
-/* A different animation name on purpose: reusing the name would NOT restart the running animation. */
-#cover.go { animation:cover-go .15s ease .2s forwards; }
-@keyframes cover-out { to { opacity:0; visibility:hidden; } }
-@keyframes cover-go { to { opacity:0; visibility:hidden; } }
-@media (prefers-reduced-motion: reduce) { #cover, #cover.go { animation-duration:.01s; } }
-/* Hidden helper that lets the launch log read the safe-area insets (status bar / camera cut-out). */
-#probe { position:absolute; visibility:hidden; pointer-events:none; width:0; height:0;
-         padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
-#diag { margin-top:20px; color:var(--muted); font-size:.85em; }
-#diag p { margin:8px 0; }
-#diagLog { white-space:pre-wrap; word-break:break-word; font:.8em/1.4 ui-monospace, monospace; max-height:60vh; overflow:auto;
-           border:1px solid var(--border); border-radius:12px; padding:8px; margin:0; }
 #status { margin:12px 0 0; text-align:center; color:var(--muted); }
 #status:empty { display:none; }
 #status.err { color:var(--err); }

@@ -138,7 +138,7 @@ Two Chrome behaviours cause it: *navigation preload* (Chrome answers the page re
 - The cache is named `quick-reminder-v2`; change the name only if you want to force every phone to drop its stored copy.
 - Offline the app opens from the last stored copy. Only one page is stored (share/shortcut links with `?title=…` are not kept, so shared text is not saved on the phone).
 - **Rolling out a change to `sw.js` itself:** the phone first has to install the new worker (it checks on launch), so the first launch after that deploy can still show the old version. Launch the app twice.
-- Method if you need to re-test: serve a copy of the site with `Cache-Control: max-age=600`, put a version marker in `index.html`, `app.js` and `style.css`, launch with a persistent Chromium profile, "deploy" a new marker, relaunch (new process, same profile), then reload twice and go offline; all three markers must always match.
+- Re-test with `node tests/e2e/run.js --only sw` (it edits a temporary copy of the site with a version marker in the HTML, JS and CSS, relaunches a persistent browser profile like a killed-and-reopened app, and checks that all three markers always match, also offline).
 
 ## Content-Security-Policy (extra protection on the public page)
 
@@ -167,7 +167,12 @@ If sending suddenly stops with `No connection. Not sent.` while the phone is onl
 
 - `node backend/test.js` tests the backend (`Code.gs`) with mocked Google services: token check, lockout, hourly limit, fixed recipients, sending, scheduling, retries and failure alerts. It sends no real mail. Run it after every change to `Code.gs`.
 - `node test-site.js` tests the pure site logic: time-button parsing and maths, subject capitalisation, and share/shortcut parameters (including hostile input).
-- Layout and clicks are not covered by these; check them in a browser at about 412 px wide.
+- `node tests/e2e/run.js [--only shift|sw|ui]` runs the **browser tests** in a phone-sized Chromium (about 1 minute). Playwright is not a dependency of this repo: in the dev container run it with `NODE_PATH=/opt/playwright-mcp/node_modules`, elsewhere install Playwright with Chromium first. It starts its own local server (mimicking GitHub Pages: `Cache-Control: max-age=600`, `Last-Modified`, 304) over a **temporary copy** of the site and never writes into the repo. The network is stubbed: nothing is ever sent and no real URL is contacted.
+  - `shift`: the page must not move while it loads (fast, throttled cold start, second launch, custom buttons, first run).
+  - `sw`: after a deploy the app must always show one consistent version (HTML, JS and CSS match) on a cold launch and on repeated pull-to-refresh, and must open offline. This is the test that catches the stale/mixed-files bug.
+  - `ui`: buttons and colours, Work resets the time, settings (open/close, validation, prefix, custom buttons, forget), sending and every result message, share/shortcut links including hostile text, dark mode, no script errors or CSP violations.
+  - Both bugs these suites guard against were re-introduced on a scratch copy to confirm the suites fail (they do).
+  - They cannot see the phone's own system bars, keyboard, vibration or real Google replies: check those on the phone.
 
 ## Icons
 

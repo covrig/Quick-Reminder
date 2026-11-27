@@ -11,7 +11,7 @@ Android phone (installed web app)  ──POST + secret token──▶  Google Ap
 
 | Part | Where it lives | Files |
 |---|---|---|
-| **Front end** (form, icon, full-screen install) | GitHub Pages: https://covrig.github.io/Quick-Reminder/ (this repo, `covrig/Quick-Reminder`, branch `main`, folder root) | files in the repo root (table below) |
+| **Front end** (form, icon, installable app without browser bars) | GitHub Pages: https://covrig.github.io/Quick-Reminder/ (this repo, `covrig/Quick-Reminder`, branch `main`, folder root) | files in the repo root (table below) |
 | **Backend** (checks token, sends or queues mail) | script.google.com, my Google account | `backend/Code.gs`, `backend/appsscript.json` |
 
 - The front end contains **no secrets**. The Apps Script web app URL and the token are typed into the phone once and kept in that browser's storage (⚙ button in the app).
@@ -45,7 +45,7 @@ README.md              this file
 | `app.js` | Form logic, sending, settings screen, share/shortcut handling |
 | `presets.js` | Time buttons: defaults, parsing of the settings text, "next 8:30" maths |
 | `util.js` | Subject capitalisation, reading `?to=…&when=…` and share parameters |
-| `manifest.webmanifest` | Install info: name, icons, full screen, icon shortcuts, share target |
+| `manifest.webmanifest` | Install info: name, icons, display mode (`standalone`, see below), icon shortcuts, share target |
 | `sw.js` | Service worker: caches files so the app opens offline (always loads the newest files when online) |
 | `icon-192.png`, `icon-512.png` | App icons |
 
@@ -64,6 +64,8 @@ git add -A && git commit -m "describe change" && git push origin main
 GitHub Pages rebuilds in about a minute. On the phone, close and reopen the app once. No change is needed in Apps Script.
 
 Changes to `manifest.webmanifest` (name, icon, shortcuts, share target, colours) are picked up by Android on its own schedule, up to about a day. To force it, uninstall the app and install it again.
+
+**Display mode: `standalone` on purpose (status bar always visible).** The manifest used to list `"display_override": ["fullscreen", "standalone"]`, which hides the Android status bar. Hiding and showing the bar changes the window size and the safe-area insets, which is the suspected cause of the page jumping at launch and of the odd scrolling (a late inset change moved the page down in a simulation: 36 px inset = 20 px jump). It was removed so the bar stays visible all the time. Do not add `fullscreen` back unless that problem is solved. Android applies manifest changes on its own schedule: reinstall the app to see it immediately.
 
 **Colours must match the page.** The manifest's `background_color` / `theme_color` (black) and the two `theme-color` meta tags in `index.html` (white in light mode, black in dark mode) are the colours Android paints around the page, for example in the strip that appears while the keyboard slides up. When they were blue, that blue flashed under the keyboard. The manifest can hold only one colour, so it uses the dark one. If the page background (`--bg` in `style.css`) ever changes, change all of these to match.
 

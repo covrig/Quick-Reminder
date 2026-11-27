@@ -70,8 +70,16 @@
     return core ? (prefix + ' ' + core).slice(0, MAX_SUBJECT) : '';
   }
 
+  // Vibration patterns in milliseconds (navigator.vibrate). Short ticks for the wheel, distinct buzzes for results.
+  var HAPTICS = { tick: 10, tap: 20, ok: 60, error: [100, 80, 100], test: [150, 80, 150] };
+  function hapticPattern(kind) {
+    if (!Object.prototype.hasOwnProperty.call(HAPTICS, kind)) return null;
+    var p = HAPTICS[kind];
+    return Array.isArray(p) ? p.slice() : p;
+  }
+
   var api = { capitalizeSubject: capitalizeSubject, parseLaunch: parseLaunch,
-              sanitizePrefix: sanitizePrefix, buildSubject: buildSubject,
+              sanitizePrefix: sanitizePrefix, buildSubject: buildSubject, hapticPattern: hapticPattern,
               MAX_SUBJECT: MAX_SUBJECT, MAX_BODY: MAX_BODY, MAX_PREFIX: MAX_PREFIX };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Util = api;

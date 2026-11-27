@@ -17,6 +17,17 @@
   }
   var presets = loadPresets();
 
+  // ---- Vibration feedback (Chrome on Android). One on/off switch in settings, default on. ----
+  function loadHaptics() {
+    try { return localStorage.getItem('qr_haptics') !== '0'; } catch (e) { return true; }
+  }
+  var haptics = loadHaptics();
+  function buzz(kind) {
+    if (!haptics) return;
+    var p = Util.hapticPattern(kind);
+    try { if (p !== null && navigator.vibrate) navigator.vibrate(p); } catch (e) { /* not supported or blocked */ }
+  }
+
   // Time buttons. Built with the DOM API (no inline styles/HTML) so a strict CSP works.
   function renderChips() {
     chips.textContent = '';
@@ -31,11 +42,86 @@
   }
   renderChips();
 
+  // ---- Hour wheel (7 AM .. 10 PM): swipe a strip of hours, one vibration click per hour passed. ----
+  // It starts dimmed at the next hour. Only a real touch / key / tap on it makes it active; when the strip stops
+  // moving, the hour under the centre marker becomes the send time (like a time button, "next time it is that hour").
+  var wheel = document.getElementById('wheel'), track = document.getElementById('wheelTrack');
+  var wheelHour = null, userActive = false, lastIdx = -1, lastTick = 0, lastScrollAt = 0, scrollRaf = 0, settleTimer = 0, idleTimer = 0;
+  var hasScrollEnd = 'onscrollend' in window;
+  var reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  function renderWheel() {
+    track.textContent = '';
+    var now = Date.now();
+    Wheel.HOURS.forEach(function (h) {
+      var d = document.createElement('div');
+      d.className = 'wheel-item' + (Wheel.isTomorrow(h, now) ? ' tmrw' : '');
+      d.setAttribute('role', 'option');
+      d.textContent = Wheel.label(h);
+      track.appendChild(d);
+    });
+  }
+  // Geometry is measured, not assumed (the strip has a border and the centred item is scaled up):
+  // offsetWidth ignores transforms; origin() is the scroll position at which the first hour sits under the marker.
+  function itemWidth() { var first = track.firstElementChild; return first ? first.offsetWidth : 0; }
+  function origin() { var first = track.firstElementChild; return first ? first.offsetLeft + first.offsetWidth / 2 - track.clientWidth / 2 : 0; }
+  function posOf(i) { return origin() + Wheel.scrollFor(i, itemWidth()); }
+  function centred() { return Wheel.indexAt(track.scrollLeft - origin(), itemWidth()); }
+  function mark(i) { // highlight the centred hour and give the marker its colour
+    for (var k = 0; k < track.children.length; k++) track.children[k].classList.toggle('on', k === i);
+    wheel.style.setProperty('--c', Wheel.color(Wheel.HOURS[i]));
+  }
+  function goTo(i) { track.scrollTo({ left: posOf(i), behavior: reduceMotion ? 'auto' : 'smooth' }); }
+  function wheelReset() { wheelHour = null; userActive = false; wheel.classList.remove('active'); }
+  function commit(i) { // the user picked this hour
+    wheelHour = Wheel.HOURS[i]; userActive = false; lastIdx = i; mark(i);
+    at.value = ''; chips.querySelectorAll('input').forEach(function (r) { r.checked = false; });
+    wheel.classList.add('active'); updateHint();
+  }
+  function settle() { if (userActive) commit(centred()); }
+  function armIdleWatch() { // a touch that never turned into a scroll must not stay "active" forever
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () {
+      if (userActive && performance.now() - lastScrollAt > 450) userActive = false; else if (userActive) armIdleWatch();
+    }, 500);
+  }
+  function touchedWheel() { userActive = true; armIdleWatch(); }
+  function tick() { var t = performance.now(); if (t - lastTick < 25) return; lastTick = t; buzz('tick'); }
+
+  renderWheel();
+  var start = Wheel.startIndex(Date.now());
+  track.scrollLeft = posOf(start); lastIdx = start; mark(start);
+  ['pointerdown', 'touchstart', 'wheel'].forEach(function (n) { track.addEventListener(n, touchedWheel, { passive: true }); });
+  track.addEventListener('scroll', function () {
+    if (!userActive) return; // initial positioning and layout changes never tick or select
+    lastScrollAt = performance.now();
+    if (!scrollRaf) scrollRaf = requestAnimationFrame(function () {
+      scrollRaf = 0; var i = centred();
+      if (i !== lastIdx) { lastIdx = i; mark(i); tick(); }
+    });
+    if (!hasScrollEnd) { clearTimeout(settleTimer); settleTimer = setTimeout(settle, 140); }
+  }, { passive: true });
+  if (hasScrollEnd) track.addEventListener('scrollend', settle);
+  track.addEventListener('click', function (e) { // tap an hour: slide it to the centre
+    var el = e.target.closest && e.target.closest('.wheel-item');
+    if (!el) return;
+    var i = Array.prototype.indexOf.call(track.children, el);
+    touchedWheel();
+    if (Math.abs(track.scrollLeft - posOf(i)) < 2) commit(i); else goTo(i);
+  });
+  track.addEventListener('keydown', function (e) { // keyboard / switch access
+    var i = centred(), n = Wheel.HOURS.length - 1, to = e.key === 'ArrowLeft' ? i - 1 : e.key === 'ArrowRight' ? i + 1 : e.key === 'Home' ? 0 : e.key === 'End' ? n : null;
+    if (to === null) return;
+    e.preventDefault(); to = Math.max(0, Math.min(n, to)); touchedWheel();
+    if (to === i && wheelHour === null) commit(i); else if (to !== i) goTo(to);
+  });
+
   function target() { // returns {date|null, error}
     if (at.value) {
       var d = new Date(at.value);
       return isNaN(d) ? { error: 'Invalid date' } : { date: d };
     }
+    if (wheelHour !== null) return { date: Wheel.resolve(wheelHour, Date.now()) };
     return { date: Presets.resolve(presets, f.p.value) };
   }
   function fmt(d) {
@@ -50,13 +136,15 @@
     whenEl.textContent = t.error ? t.error : (t.date ? 'Will send: ' + fmt(t.date) : 'Will send immediately');
   }
 
-  // Picking a preset clears the calendar; picking a date deselects the presets.
-  chips.addEventListener('change', function () { at.value = ''; updateHint(); });
+  // Only one way of choosing the time is active at a time. Picking a preset clears the calendar and the wheel;
+  // picking a date deselects the presets and the wheel; the wheel clears the others (see commit()).
+  chips.addEventListener('change', function () { at.value = ''; wheelReset(); updateHint(); });
   // Switching to Work puts the time back to Now.
   document.querySelector('input[name=t][value=work]').addEventListener('change', function () {
-    at.value = ''; f.p.value = 'now'; updateHint();
+    at.value = ''; f.p.value = 'now'; wheelReset(); updateHint();
   });
   function onDateChange() {
+    wheelReset();
     if (at.value) chips.querySelectorAll('input').forEach(function (r) { r.checked = false; });
     else f.p.value = 'now';
     updateHint();
@@ -90,14 +178,15 @@
   var resetTimer;
   function fail(text) {
     btn.classList.remove('done'); btn.textContent = 'Send'; st.className = 'err'; st.textContent = text;
+    buzz('error');
   }
 
   f.addEventListener('submit', function (e) {
     e.preventDefault();
     var t = target();
-    if (t.error) { st.className = 'err'; st.textContent = t.error; return; }
+    if (t.error) { st.className = 'err'; st.textContent = t.error; buzz('error'); return; }
     if (!subject.value.trim() && !msg.value.trim()) {
-      st.className = 'err'; st.textContent = 'Enter a subject or details'; subject.focus(); return;
+      st.className = 'err'; st.textContent = 'Enter a subject or details'; buzz('error'); subject.focus(); return;
     }
     // Capitalise the first letter of the subject if the user didn't (links are left alone).
     subject.value = Util.capitalizeSubject(subject.value);
@@ -106,6 +195,7 @@
     clearTimeout(resetTimer);
     btn.classList.remove('done');
     btn.disabled = true; st.className = ''; st.textContent = ''; btn.textContent = 'Sending…';
+    buzz('tap'); // a tiny tick: the send has started
     var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, 25000);
     // text/plain keeps this a "simple" cross-origin request (no preflight); the token travels in the body.
     fetch(cfg.url, {
@@ -118,9 +208,9 @@
       .then(function (res) {
         btn.disabled = false;
         if (!res || !res.ok) { fail(res && res.error ? res.error : 'Unexpected reply'); return; }
-        btn.textContent = res.status + ' ✓'; btn.classList.add('done');
+        btn.textContent = res.status + ' ✓'; btn.classList.add('done'); buzz('ok');
         resetTimer = setTimeout(function () { btn.textContent = 'Send'; btn.classList.remove('done'); }, 3000);
-        subject.value = ''; msg.value = ''; at.value = ''; f.p.value = 'now'; updateHint(); subject.focus();
+        subject.value = ''; msg.value = ''; at.value = ''; f.p.value = 'now'; wheelReset(); updateHint(); subject.focus();
       })
       .catch(function (err) {
         btn.disabled = false;
@@ -137,7 +227,7 @@
   var setup = document.getElementById('setup'), cfgUrl = document.getElementById('cfgUrl'),
       cfgToken = document.getElementById('cfgToken'), cfgMsg = document.getElementById('cfgMsg'),
       cfgPresets = document.getElementById('cfgPresets'), cfgPrefix = document.getElementById('cfgPrefix'),
-      gear = document.getElementById('gear');
+      cfgHaptics = document.getElementById('cfgHaptics'), gear = document.getElementById('gear');
   function loadCfg() {
     try {
       var u = localStorage.getItem('qr_url'), k = localStorage.getItem('qr_token');
@@ -155,7 +245,7 @@
     cfgToken.required = !c;
     var pt = loadPresetText(); // a damaged saved value shows the defaults instead
     cfgPresets.value = pt !== null && Presets.fromText(pt).ok ? pt : Presets.DEFAULT_TEXT;
-    cfgPrefix.value = prefix;
+    cfgPrefix.value = prefix; cfgHaptics.checked = haptics;
     // The top-right button becomes a close button while settings are open.
     gear.textContent = '✕'; gear.setAttribute('aria-label', 'Close settings'); gear.title = 'Close settings';
     cfgUrl.focus();
@@ -183,19 +273,28 @@
       if (cfgPresets.value.trim() === Presets.DEFAULT_TEXT) localStorage.removeItem('qr_presets');
       else localStorage.setItem('qr_presets', cfgPresets.value);
       if (newPrefix) localStorage.setItem('qr_prefix', newPrefix); else localStorage.removeItem('qr_prefix');
+      if (cfgHaptics.checked) localStorage.removeItem('qr_haptics'); else localStorage.setItem('qr_haptics', '0');
     } catch (err) { cfgMsg.textContent = 'Could not save on this device.'; return; }
-    presets = pr.presets; renderChips(); at.value = ''; updateHint();
-    prefix = newPrefix; applyPrefixLimit();
+    presets = pr.presets; renderChips(); at.value = ''; wheelReset(); updateHint();
+    prefix = newPrefix; applyPrefixLimit(); haptics = cfgHaptics.checked;
     showForm();
+  });
+  // "Test vibration" ignores the on/off switch: it answers "can this phone vibrate for this page at all?".
+  document.getElementById('cfgBuzz').addEventListener('click', function () {
+    var ok = false;
+    if (!navigator.vibrate) { cfgMsg.textContent = 'This browser cannot vibrate.'; return; }
+    try { ok = navigator.vibrate(Util.hapticPattern('test')); } catch (e) { ok = false; }
+    cfgMsg.textContent = ok ? 'Buzz sent. If you felt nothing, check the phone\'s vibration and Do Not Disturb settings.'
+                            : 'The browser blocked the vibration.';
   });
   document.getElementById('cfgReset').addEventListener('click', function () {
     cfgPresets.value = Presets.DEFAULT_TEXT;
     cfgMsg.textContent = 'Defaults restored. Tap Save to keep them.';
   });
   document.getElementById('cfgClear').addEventListener('click', function () {
-    try { ['qr_url', 'qr_token', 'qr_presets', 'qr_prefix'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
-    presets = Presets.DEFAULTS; renderChips(); at.value = ''; updateHint();
-    prefix = ''; applyPrefixLimit();
+    try { ['qr_url', 'qr_token', 'qr_presets', 'qr_prefix', 'qr_haptics'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+    presets = Presets.DEFAULTS; renderChips(); at.value = ''; wheelReset(); updateHint();
+    prefix = ''; applyPrefixLimit(); haptics = true;
     showSetup('Settings removed.');
   });
   if (!loadCfg()) showSetup('First time here: enter your details.');

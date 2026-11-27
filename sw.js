@@ -9,7 +9,7 @@
 //  2. In-page memory cache: on reload Chrome reuses scripts/CSS it still considers fresh and never asks the worker.
 //     So every response goes back to the page marked "Cache-Control: no-cache", which forces the page to ask again.
 var CACHE = 'quick-reminder-v2'; // v2: drops the old cache (v1 stored stale and query-string pages)
-var FILES = ['./', 'style.css', 'app.js', 'presets.js', 'util.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+var FILES = ['./', 'style.css', 'app.js', 'presets.js', 'wheel.js', 'util.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (e) {
   // cache:'reload' skips the 10-minute HTTP cache, so the offline copy is really the deployed version.

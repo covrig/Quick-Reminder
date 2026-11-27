@@ -20,6 +20,7 @@
      Do not move these back to the end of <body>. -->
 <script defer blocking="render" src="util.js"></script>
 <script defer blocking="render" src="presets.js"></script>
+<script defer blocking="render" src="wheel.js"></script>
 <script defer blocking="render" src="app.js"></script>
 <title>Quick Reminder</title>
 </head>
@@ -37,6 +38,8 @@
   <label class="lbl spaced" for="cfgPrefix">Text before the subject (optional)</label>
   <input type="text" id="cfgPrefix" maxlength="30" placeholder="e.g. [Reminder] or [Update]" autocomplete="off" autocapitalize="off" aria-describedby="cfgPrefixHelp">
   <p id="cfgPrefixHelp">Put in front of every subject, so "Call dentist" is sent as "[Reminder] Call dentist". Leave empty for none.</p>
+  <label class="check" for="cfgHaptics"><input type="checkbox" id="cfgHaptics" checked><span>Vibrate on wheel clicks, send, success and errors</span></label>
+  <button type="button" id="cfgBuzz" class="secondary">Test vibration</button>
   <label class="lbl spaced" for="cfgPresets">Time buttons, one per line</label>
   <textarea id="cfgPresets" rows="9" spellcheck="false" autocapitalize="off" aria-describedby="cfgHelp"></textarea>
   <p id="cfgHelp">Examples: <code>8:30</code>, <code>3:00 pm</code>, <code>18:00</code> (next time it is that time), <code>+1h</code>, <code>+90m</code> (from now). Up to 8. "Now" is always first.</p>
@@ -65,6 +68,11 @@
 
   <div class="group">
     <div class="seg chips" id="chips" role="radiogroup" aria-label="When"></div>
+    <!-- Hour wheel: swipe the strip, one click (vibration) per hour; the hour under the marker is the send time. -->
+    <div class="wheel" id="wheel">
+      <div class="wheel-marker" aria-hidden="true"></div>
+      <div class="wheel-track" id="wheelTrack" tabindex="0" role="listbox" aria-label="Pick an hour from 7 AM to 10 PM"></div>
+    </div>
     <div class="dt" id="dt">
       <input type="datetime-local" id="at" aria-label="Pick date and time">
       <span class="ph" aria-hidden="true">Tap to pick date and time</span>

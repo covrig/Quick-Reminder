@@ -210,4 +210,66 @@ assert.strictEqual(U.buildSubject('x'.repeat(30), 's'.repeat(300), '').length, 2
 assert.strictEqual(U.buildSubject('', 's'.repeat(300), '').length, 200);
 assert.strictEqual(U.buildSubject('\n', 'Hi', ''), 'Hi', 'a prefix that is only whitespace counts as none');
 
+// ===================== wheel.js =====================
+const W = require('./wheel.js');
+const lumW = (hexc) => { const f2 = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }; const [r, g, b] = [1, 3, 5].map((i) => f2(parseInt(hexc.slice(i, i + 2), 16))); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+
+// --- hours and labels ---
+assert.deepStrictEqual(W.HOURS, [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
+assert.strictEqual(W.HOURS.length, 16);
+assert.deepStrictEqual(W.HOURS.map(W.label), ['7 AM', '8 AM', '9 AM', '10 AM', '11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM']);
+
+// --- which item is centred ---
+assert.strictEqual(W.indexAt(0, 64), 0);
+assert.strictEqual(W.indexAt(64, 64), 1);
+assert.strictEqual(W.indexAt(31, 64), 0, 'just below half an item stays on the first');
+assert.strictEqual(W.indexAt(33, 64), 1, 'past half an item moves on');
+assert.strictEqual(W.indexAt(64 * 15, 64), 15);
+assert.strictEqual(W.indexAt(99999, 64), 15, 'clamped at the last hour');
+assert.strictEqual(W.indexAt(-50, 64), 0, 'clamped at the first hour (rubber-band overscroll)');
+assert.strictEqual(W.indexAt(200, 0), 0, 'unknown width is safe');
+assert.strictEqual(W.indexAt(200, NaN), 0);
+assert.strictEqual(W.scrollFor(3, 64), 192);
+for (let i = 0; i < 16; i++) assert.strictEqual(W.indexAt(W.scrollFor(i, 64), 64), i, 'round trip ' + i);
+
+// --- where the strip rests: the next full hour, kept inside 7 AM .. 10 PM ---
+const clock = (h, m) => new Date(2026, 10, 20, h, m, 0).getTime();
+assert.strictEqual(W.startIndex(clock(14, 30)), 8, '2:30 PM -> 3 PM (index 8)');
+assert.strictEqual(W.startIndex(clock(14, 0)), 8, 'exactly 2:00 PM -> 3 PM');
+assert.strictEqual(W.startIndex(clock(3, 0)), 0, 'night: first hour (7 AM)');
+assert.strictEqual(W.startIndex(clock(6, 59)), 0);
+assert.strictEqual(W.startIndex(clock(22, 30)), 15, 'late: last hour (10 PM)');
+assert.strictEqual(W.startIndex(clock(23, 59)), 15);
+
+// --- resolve: the next time it is that hour ---
+const at2 = (d) => [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()].join(',');
+assert.strictEqual(at2(W.resolve(15, clock(14, 30))), '2026,11,20,15,0,0', '3 PM is still ahead today');
+assert.strictEqual(at2(W.resolve(9, clock(14, 30))), '2026,11,21,9,0,0', '9 AM has passed: tomorrow');
+assert.strictEqual(at2(W.resolve(15, clock(15, 0))), '2026,11,21,15,0,0', 'exactly 3:00 PM counts as passed');
+assert.strictEqual(at2(W.resolve(8, new Date(2026, 11, 31, 20, 0, 0).getTime())), '2027,1,1,8,0,0', 'year rollover');
+assert.strictEqual(W.isTomorrow(15, clock(14, 30)), false);
+assert.strictEqual(W.isTomorrow(9, clock(14, 30)), true);
+assert.strictEqual(W.isTomorrow(15, clock(15, 0)), true);
+
+// --- colours: amber in the morning to indigo at night, all readable with white text and all different ---
+const wcols = W.HOURS.map(W.color);
+assert.ok(wcols.every((c) => /^#[0-9a-f]{6}$/.test(c)), 'valid hex colours: ' + wcols.join(' '));
+assert.strictEqual(new Set(wcols).size, 16, 'every hour has its own colour');
+wcols.forEach((c, i) => assert.ok(1.05 / (lumW(c) + 0.05) >= 3.6, 'white text readable on ' + W.label(W.HOURS[i]) + ' ' + c + ': ' + (1.05 / (lumW(c) + 0.05)).toFixed(2)));
+assert.ok(parseInt(wcols[0].slice(1, 3), 16) > parseInt(wcols[0].slice(5, 7), 16), 'morning is warm (more red than blue)');
+assert.ok(parseInt(wcols[15].slice(5, 7), 16) > parseInt(wcols[15].slice(1, 3), 16), 'evening is cool (more blue than red)');
+
+// --- haptic patterns ---
+assert.strictEqual(U.hapticPattern('tick'), 10);
+assert.strictEqual(U.hapticPattern('tap'), 20);
+assert.strictEqual(U.hapticPattern('ok'), 60);
+assert.deepStrictEqual(U.hapticPattern('error'), [100, 80, 100]);
+assert.deepStrictEqual(U.hapticPattern('test'), [150, 80, 150]);
+assert.strictEqual(U.hapticPattern('nope'), null);
+assert.strictEqual(U.hapticPattern('constructor'), null, 'inherited object keys are not patterns');
+assert.strictEqual(U.hapticPattern(undefined), null);
+assert.notStrictEqual(U.hapticPattern('error'), U.hapticPattern('error'), 'a copy is returned: callers cannot change the pattern');
+['tick', 'tap', 'ok', 'error', 'test'].forEach((k) => { const p = [].concat(U.hapticPattern(k)); assert.ok(p.every((n) => Number.isInteger(n) && n > 0) && p.reduce((a, b) => a + b, 0) <= 1000, k + ' pattern is sane and under 1 s'); });
+assert.ok(U.hapticPattern('error').length > 1 && !Array.isArray(U.hapticPattern('ok')), 'error is a double buzz, ok a single one');
+
 console.log('site tests passed');

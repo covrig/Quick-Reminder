@@ -17,6 +17,7 @@ async function newPage(pw, base, opts = {}) {
   page.on('request', (r) => { if (r.method() === 'POST') problems.posts.push(r.url()); });
   await page.addInitScript(SEED);
   await page.addInitScript(() => { document.addEventListener('securitypolicyviolation', (e) => (window.__viol = window.__viol || []).push(e.violatedDirective + ' <- ' + e.blockedURI)); });
+  if (opts.init) await page.addInitScript(opts.init);
   await page.goto(base + (opts.path || '/index.html')); await page.waitForTimeout(400);
   return { browser, ctx, page, problems };
 }
@@ -148,6 +149,138 @@ module.exports = async function run(pw) {
       const x = await h.page.evaluate(() => ({ pwned: window.__pwned === 1, imgs: document.querySelectorAll('img').length, subject: document.getElementById('subject').value, to: document.getElementById('f').t.value, when: document.getElementById('f').p.value }));
       check('hostile share text stays plain text; unknown recipient/time values are ignored', !x.pwned && x.imgs === 0 && x.subject.startsWith('<img') && x.to === 'personal' && x.when === 'now', x);
       await h.browser.close();
+    }
+
+    // ---------- hour wheel + vibration (navigator.vibrate replaced by a recorder; real touch gestures via CDP) ----------
+    const RECORD = () => { window.__vib = []; Object.defineProperty(navigator, 'vibrate', { configurable: true, value: (p) => { window.__vib.push(p); return true; } }); };
+    {
+      const { browser, ctx, page, problems } = await newPage(pw, base, { init: RECORD });
+      const cdp = await ctx.newCDPSession(page);
+      const state = () => page.evaluate(() => {
+        const items = [...document.querySelectorAll('.wheel-item')], on = items.findIndex((e) => e.classList.contains('on'));
+        return { active: document.getElementById('wheel').classList.contains('active'), on, onText: on >= 0 ? items[on].textContent : null, checked: document.querySelectorAll('#chips input:checked').length,
+                 hint: document.getElementById('when').textContent, vib: window.__vib.slice(), at: document.getElementById('at').value, chip: document.getElementById('f').p.value };
+      });
+      const clearVib = () => page.evaluate(() => { window.__vib.length = 0; });
+      const trackBox = async () => page.locator('#wheelTrack').boundingBox();
+      // A real finger drag: touchStart, many small touchMoves, touchEnd (the browser then takes over and scrolls, like on a phone).
+      const swipe = async (dx) => {
+        const b = await trackBox(), x0 = b.x + b.width / 2, y0 = b.y + b.height / 2, steps = 16;
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+        for (let i = 1; i <= steps; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + dx * i / steps, y: y0 }] }); await page.waitForTimeout(18); }
+        await page.waitForTimeout(120); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await page.waitForTimeout(700);
+      };
+      const tapItem = async (idx) => { const bb = await page.locator('.wheel-item').nth(idx).boundingBox(); await page.touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.waitForTimeout(700); };
+
+      // --- structure and resting state ---
+      const s0 = await state();
+      const meta = await page.evaluate(() => ({ labels: [...document.querySelectorAll('.wheel-item')].map((e) => e.textContent), start: Wheel.startIndex(Date.now()), tmrw: [...document.querySelectorAll('.wheel-item.tmrw')].length, aria: document.getElementById('wheelTrack').getAttribute('aria-label'), widthOk: Math.round(document.querySelector('.wheel-item').getBoundingClientRect().width) }));
+      check('wheel: 16 hours from 7 AM to 10 PM, in a labelled listbox', meta.labels.length === 16 && meta.labels[0] === '7 AM' && meta.labels[5] === '12 PM' && meta.labels[15] === '10 PM' && /7 AM to 10 PM/.test(meta.aria), meta);
+      check('wheel: rests dimmed on the next hour, nothing selected, no vibration at load', !s0.active && s0.on === meta.start && s0.hint === 'Will send immediately' && s0.chip === 'now' && s0.vib.length === 0, s0);
+      await page.evaluate(() => { const t = document.getElementById('wheelTrack'); t.scrollLeft = t.scrollLeft > 200 ? t.scrollLeft - 192 : t.scrollLeft + 192; });
+      await page.waitForTimeout(500);
+      const s1 = await state();
+      check('wheel: a script-driven scroll (no touch) neither selects nor vibrates', !s1.active && s1.vib.length === 0 && s1.hint === 'Will send immediately', s1);
+      await page.evaluate(() => { const t = document.getElementById('wheelTrack'); const c = t.children[Wheel.startIndex(Date.now())]; t.scrollLeft = c.offsetLeft + c.offsetWidth / 2 - t.clientWidth / 2; });
+      await page.waitForTimeout(300);
+
+      // --- a real swipe: 3 hours, one tick each, selects after it settles ---
+      const startIdx = (await state()).on, dir = startIdx > 7 ? 192 : -192, wantIdx = startIdx + (dir > 0 ? -3 : 3); // finger right = earlier hours
+      await clearVib(); await swipe(dir);
+      const s2 = await state();
+      check('wheel: swiping 3 hours selects that hour; chips deselect; hint shows the time', s2.active && s2.on === wantIdx && s2.checked === 0 && /^Will send: /.test(s2.hint), { startIdx, wantIdx, s2 });
+      check('wheel: one 10 ms tick per hour passed (3 hours = 3 ticks)', s2.vib.length === 3 && s2.vib.every((v) => v === 10), s2.vib);
+
+      // --- tap an hour two places away: slides there, ticks twice, selects ---
+      await clearVib(); const before = (await state()).on; const tapTo = before + (before > 7 ? -2 : 2);
+      await tapItem(tapTo);
+      const s3 = await state();
+      check('wheel: tapping an hour slides it to the centre and selects it (a tick for the hours it passes)', s3.on === tapTo && s3.active && s3.vib.length >= 1 && s3.vib.length <= 2 && s3.vib.every((v) => v === 10), s3);
+
+      // --- the other ways of choosing a time clear the wheel, and the wheel clears them ---
+      await page.evaluate(() => document.querySelector('input[name=p][value="3h"]').click());
+      const s4 = await state();
+      check('choosing a time button deselects the wheel', !s4.active && s4.chip === '3h' && /^Will send: /.test(s4.hint), s4);
+      await clearVib(); const centred = (await state()).on; await tapItem(centred);
+      const s5 = await state();
+      check('tapping the already-centred hour selects it (no scrolling, so no tick)', s5.active && s5.checked === 0 && s5.vib.length === 0, s5);
+      await page.evaluate(() => { const at = document.getElementById('at'); at.value = '2026-12-01T10:00'; at.dispatchEvent(new Event('input')); });
+      const s6 = await state();
+      check('typing a date deselects the wheel and the time buttons', !s6.active && s6.checked === 0 && /Dec 1|Tue/.test(s6.hint), s6);
+      await tapItem(centred);
+      const s7 = await state();
+      check('picking an hour clears the typed date', s7.active && s7.at === '' && /^Will send: /.test(s7.hint), s7);
+      await page.evaluate(() => document.querySelector('input[name=t][value=work]').click());
+      const s8 = await state();
+      check('switching to Work puts the time back to Now and dims the wheel', !s8.active && s8.chip === 'now' && s8.hint === 'Will send immediately', s8);
+      await page.evaluate(() => document.querySelector('input[name=t][value=personal]').click());
+
+      // --- keyboard ---
+      await page.focus('#wheelTrack'); const k0 = (await state()).on; await page.keyboard.press(k0 < 15 ? 'ArrowRight' : 'ArrowLeft'); await page.waitForTimeout(700);
+      const s9 = await state();
+      check('keyboard: arrow keys move the wheel one hour and select it', s9.active && s9.on === (k0 < 15 ? k0 + 1 : k0 - 1), { k0, s9 });
+
+      // --- sending with the wheel: right time in the payload, wheel resets afterwards; vibration patterns ---
+      const sent = await page.evaluate(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const f = document.getElementById('f'), subj = document.getElementById('subject');
+        const hourPicked = Wheel.HOURS[[...document.querySelectorAll('.wheel-item')].findIndex((e) => e.classList.contains('on'))];
+        let reply, body; window.fetch = (u, o) => new Promise((res, rej) => { body = JSON.parse(o.body); reply = { ok: (d) => res({ json: () => Promise.resolve(d) }), fail: (e) => rej(e), nonJson: () => res({ json: () => Promise.reject(new SyntaxError('x')) }) }; });
+        window.__vib.length = 0; subj.value = 'wheel test'; f.requestSubmit(); await wait(30);
+        const afterTap = window.__vib.slice(); reply.ok({ ok: true, status: 'Scheduled' }); await wait(100);
+        const d = new Date(body.sendAt);
+        const out = { hourPicked, sendHour: d.getHours(), sendMin: d.getMinutes(), future: d.getTime() > Date.now(), afterTap, all: window.__vib.slice(), wheelActive: document.getElementById('wheel').classList.contains('active'), chip: f.p.value, btn: document.getElementById('btn').textContent };
+        await wait(3100);
+        // failures: each one gives the double buzz, once
+        out.errors = {};
+        for (const [name, how] of [['server', () => reply.ok({ ok: false, error: 'Unauthorized' })], ['nonJson', () => reply.nonJson()], ['timeout', () => reply.fail(Object.assign(new Error('a'), { name: 'AbortError' }))], ['network', () => reply.fail(new TypeError('Failed to fetch'))]]) {
+          window.__vib.length = 0; subj.value = 'x'; f.requestSubmit(); await wait(20); how(); await wait(60); out.errors[name] = window.__vib.slice();
+        }
+        window.__vib.length = 0; subj.value = ''; document.getElementById('msg').value = ''; f.requestSubmit(); await wait(30); out.empty = window.__vib.slice();
+        return out;
+      });
+      check('wheel send: the payload carries the chosen hour sharp (future time), the wheel resets afterwards', sent.sendHour === sent.hourPicked && sent.sendMin === 0 && sent.future && !sent.wheelActive && sent.chip === 'now' && sent.btn === 'Scheduled ✓', sent);
+      check('vibration on send: a 20 ms tick when it starts, a 60 ms buzz when it works', JSON.stringify(sent.afterTap) === '[20]' && JSON.stringify(sent.all) === '[20,60]', [sent.afterTap, sent.all]);
+      check('vibration on every kind of failure: one double buzz (server error, non-JSON, timeout, no connection)', Object.values(sent.errors).every((v) => JSON.stringify(v) === JSON.stringify([20, [100, 80, 100]])), sent.errors);
+      check('vibration for validation errors: only the double buzz (no start tick)', JSON.stringify(sent.empty) === JSON.stringify([[100, 80, 100]]), sent.empty);
+
+      // --- settings: switch, test button, persistence, forget ---
+      const set = await page.evaluate(async () => {
+        const $ = (id) => document.getElementById(id), wait = (ms) => new Promise((r) => setTimeout(r, ms)), out = {};
+        $('gear').click(); out.defaultChecked = $('cfgHaptics').checked;
+        window.__vib.length = 0; $('cfgBuzz').click(); out.testOn = { msg: $('cfgMsg').textContent, vib: window.__vib.slice() };
+        const real = navigator.vibrate; Object.defineProperty(navigator, 'vibrate', { configurable: true, value: () => false });
+        $('cfgBuzz').click(); out.testBlocked = $('cfgMsg').textContent;
+        Object.defineProperty(navigator, 'vibrate', { configurable: true, value: real });
+        $('cfgHaptics').checked = false; $('setup').requestSubmit(); out.stored = localStorage.getItem('qr_haptics');
+        // off: sending and the wheel are silent
+        window.__vib.length = 0; window.fetch = () => Promise.resolve({ json: () => Promise.resolve({ ok: true, status: 'Sent' }) });
+        $('subject').value = 'quiet'; $('f').requestSubmit(); await wait(100); out.offSend = window.__vib.slice();
+        $('gear').click(); window.__vib.length = 0; $('cfgBuzz').click(); out.testWhileOff = window.__vib.length; // the test ignores the switch
+        $('cfgClose').click();
+        return out;
+      });
+      check('settings: vibration is on by default; "Test vibration" buzzes 150-80-150 and says so; "blocked" is reported', set.defaultChecked && /^Buzz sent\./.test(set.testOn.msg) && JSON.stringify(set.testOn.vib) === '[[150,80,150]]' && /blocked/.test(set.testBlocked), set);
+      check('settings: switching it off is saved, silences sending, but the test button still works', set.stored === '0' && set.offSend.length === 0 && set.testWhileOff === 1, set);
+      await page.reload(); await page.waitForTimeout(500);
+      const again = await page.evaluate(() => { document.getElementById('gear').click(); return { checked: document.getElementById('cfgHaptics').checked, stored: localStorage.getItem('qr_haptics') }; });
+      check('settings: the switch survives a reload', again.checked === false && again.stored === '0', again);
+      const forgot = await page.evaluate(() => { document.getElementById('cfgClear').click(); document.getElementById('gear').click(); return { stored: localStorage.getItem('qr_haptics'), checked: document.getElementById('cfgHaptics').checked }; });
+      check('settings: "Forget this phone\'s settings" turns vibration back on', forgot.stored === null && forgot.checked === true, forgot);
+      const viol = await page.evaluate(() => window.__viol || []);
+      check('wheel and vibration: no script errors or CSP violations', problems.errors.length === 0 && viol.length === 0, [problems.errors, viol]);
+      await browser.close();
+
+      // a browser without the Vibration API: nothing breaks, the test button says so
+      const nv = await newPage(pw, base, { init: () => { try { delete Navigator.prototype.vibrate; } catch (e) { /* ignore */ } } });
+      const nvr = await nv.page.evaluate(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const $ = (id) => document.getElementById(id), out = { has: 'vibrate' in navigator };
+        window.fetch = () => Promise.resolve({ json: () => Promise.resolve({ ok: true, status: 'Sent' }) });
+        $('subject').value = 'x'; $('f').requestSubmit(); await wait(100); out.sent = $('btn').textContent;
+        document.querySelectorAll('.wheel-item')[3].click(); await wait(600); out.wheel = document.getElementById('wheel').classList.contains('active');
+        $('gear').click(); $('cfgBuzz').click(); out.msg = $('cfgMsg').textContent; return out;
+      });
+      check('no Vibration API: sending and the wheel still work, "Test vibration" says the browser cannot vibrate', nvr.has === false && nvr.sent === 'Sent ✓' && nvr.wheel === true && /cannot vibrate/.test(nvr.msg) && nv.problems.errors.length === 0, [nvr, nv.problems.errors]);
+      await nv.browser.close();
     }
 
     // ---------- dark mode paints a dark page ----------

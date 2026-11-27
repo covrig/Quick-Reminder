@@ -162,22 +162,28 @@ assert.strictEqual(xss.body, '<script>alert(1)</script>');
 assert.deepStrictEqual(U.parseLaunch('?%E0%A4%A', ids), {}, 'malformed query does not throw');
 assert.deepStrictEqual(U.parseLaunch('?title=%20%20&text=%20', ids), {}, 'blank values ignored');
 
-// --- launch colours: the manifest, the light theme-color meta and the light page background must be the same colour ---
+// --- launch colours: the manifest, the theme-color meta and the page background are ONE colour (the app is always dark) ---
+// A mismatch shows as a light edge at launch, a white handle area, or a white flash under the keyboard.
 {
   const fs = require('fs');
   const norm = (c) => { c = c.trim().toLowerCase(); return c.length === 4 ? '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3] : c; };
   const manifest = JSON.parse(fs.readFileSync(__dirname + '/manifest.webmanifest', 'utf8'));
-  const html = fs.readFileSync(__dirname + '/index.html', 'utf8'), css = fs.readFileSync(__dirname + '/style.css', 'utf8');
-  const metaLight = /<meta name="theme-color" media="\(prefers-color-scheme: light\)" content="(#[0-9a-fA-F]{3,6})">/.exec(html);
-  const metaDark = /<meta name="theme-color" media="\(prefers-color-scheme: dark\)" content="(#[0-9a-fA-F]{3,6})">/.exec(html);
-  const bgLight = /:root\s*\{[^}]*--bg:\s*(#[0-9a-fA-F]{3,6})/.exec(css);
-  const bgDark = /prefers-color-scheme: dark\)\s*\{\s*:root\s*\{[^}]*--bg:\s*(#[0-9a-fA-F]{3,6})/.exec(css);
-  assert.ok(metaLight && metaDark && bgLight && bgDark, 'theme-color metas and --bg values must be found');
-  assert.strictEqual(norm(manifest.theme_color), norm(metaLight[1]), 'manifest theme_color must equal the light theme-color meta');
-  assert.strictEqual(norm(manifest.background_color), norm(bgLight[1]), 'manifest background_color must equal the light page background');
-  assert.strictEqual(norm(metaLight[1]), norm(bgLight[1]), 'light theme-color meta must equal the light page background');
-  assert.strictEqual(norm(metaDark[1]), norm(bgDark[1]), 'dark theme-color meta must equal the dark page background');
+  const html = fs.readFileSync(__dirname + '/index.html', 'utf8'), css = fs.readFileSync(__dirname + '/style.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''); // comments may explain the rules
+  const metas = [...html.matchAll(/<meta name="theme-color"[^>]*>/g)].map((m) => m[0]);
+  assert.strictEqual(metas.length, 1, 'exactly one theme-color meta (no light/dark pair)');
+  assert.ok(!/media=/.test(metas[0]), 'the theme-color meta must not depend on the phone mode');
+  const metaColor = /content="(#[0-9a-fA-F]{3,6})"/.exec(metas[0]);
+  const bg = /:root\s*\{[^}]*--bg:\s*(#[0-9a-fA-F]{3,6})/.exec(css);
+  assert.ok(metaColor && bg, 'theme-color meta and --bg must be found');
+  assert.strictEqual(norm(manifest.theme_color), norm(metaColor[1]), 'manifest theme_color must equal the theme-color meta');
+  assert.strictEqual(norm(manifest.background_color), norm(bg[1]), 'manifest background_color must equal the page background');
+  assert.strictEqual(norm(metaColor[1]), norm(bg[1]), 'theme-color meta must equal the page background');
+  assert.strictEqual(norm(bg[1]), '#000000', 'the page background is black');
+  assert.ok(/<meta name="color-scheme" content="dark">/.test(html) && /color-scheme:\s*dark/.test(css), 'the page declares itself dark');
+  assert.ok(!/prefers-color-scheme/.test(css) && !/prefers-color-scheme/.test(html), 'nothing may follow the phone light/dark mode any more');
   assert.ok(!/for="at"/.test(html) && /id="at"[^>]*aria-label="Pick date and time"/.test(html), 'the date field has no visible label but an accessible name');
+  assert.ok(!/id="cfgClose"|id="schedClose"/.test(html), 'the redundant close buttons stay removed (the top-right button closes)');
+  assert.ok(!/min-height:\s*100dvh/.test(css), 'body must not use min-height:100dvh (made the page scroll a few pixels on Android)');
 }
 
 // --- sanitizePrefix ---

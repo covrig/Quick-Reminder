@@ -2,6 +2,12 @@
 'use strict';
 const { copySite, rmrf, startServer, makeChecker } = require('./lib');
 
+// The page reports colours as rgb(...) or color(srgb ...). The app is always dark: selected buttons are their base
+// colour mixed 62% with white (see style.css), so compare by value.
+const rgbOf = (str) => { const m = /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/.exec(str); if (m) return [m[1], m[2], m[3]].map((v) => Math.round(parseFloat(v) * 255)); const n = /rgba?\((\d+), (\d+), (\d+)/.exec(str); return n ? [+n[1], +n[2], +n[3]] : null; };
+const mixWhite = (hex) => [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.62 + 255 * 0.38));
+const isMix = (str, hex) => { const a = rgbOf(str), b = mixWhite(hex); return !!a && a.every((v, i) => Math.abs(v - b[i]) <= 2); };
+
 // First visit of a tab: clean storage + saved URL/token. Reloads in the same tab keep whatever the page saved.
 const SEED = () => { try {
   if (!sessionStorage.getItem('seeded')) { localStorage.clear(); localStorage.setItem('qr_url', 'https://script.google.com/macros/s/ABC/exec'); localStorage.setItem('qr_token', 'T'.repeat(30)); sessionStorage.setItem('seeded', '1'); }
@@ -52,12 +58,12 @@ module.exports = async function run(pw) {
       check('nine time buttons in the default order', JSON.stringify(r.chips) === JSON.stringify(['Now', '8:30 AM', '9:30 AM', '3:00 PM', '6:00 PM', '7:00 PM', '1 h', '3 h', '6 h']), r.chips);
       check('no "When" title and no "Or pick date and time" label (the field says it itself)', !r.labels.some((l) => /^\s*(When|Or pick date and time)\s*$/.test(l)), r.labels);
       check('defaults: Personal, Now, "Will send immediately"', r.defaults.recipient === 'personal' && r.defaults.chip === 'now' && r.defaults.hint === 'Will send immediately', r.defaults);
-      check('only the selected time button is coloured (Now green, 6 PM its own colour, others plain)', r.nowBg === 'rgb(30, 142, 78)' && r.sel6pm === 'rgb(100, 151, 23)' && r.idleBg === 'rgba(0, 0, 0, 0)', [r.nowBg, r.sel6pm, r.idleBg]);
-      check('recipient colours: Personal blue, Work red', r.personalBg === 'rgb(26, 115, 232)' && r.workBg === 'rgb(217, 83, 79)', [r.personalBg, r.workBg]);
+      check('only the selected time button is coloured (Now green, 6 PM its own colour, others plain)', isMix(r.nowBg, '#1e8e4e') && isMix(r.sel6pm, '#649717') && r.idleBg === 'rgba(0, 0, 0, 0)', [r.nowBg, r.sel6pm, r.idleBg]);
+      check('recipient colours: Personal blue, Work red', isMix(r.personalBg, '#1a73e8') && isMix(r.workBg, '#d9534f'), [r.personalBg, r.workBg]);
       check('switching to Work puts the time back to Now', r.workReset.chip === 'now' && r.workReset.hint === 'Will send immediately', r.workReset);
       check('Details start collapsed (48 px), grow when focused, collapse again when empty', r.ta.collapsed === 48 && r.ta.focused > 100 && r.ta.blurredEmpty === 48, r.ta);
       check('date field: placeholder when empty, hidden when filled, chips deselected; a chip clears the date', r.ph.empty === 'flex' && r.ph.filled === 'none' && r.ph.chipsCleared && r.ph.afterChip.at === '' && r.ph.afterChip.ph === 'flex', r.ph);
-      check('no sideways scrolling; html paints its own background', r.overflowX === 0 && r.htmlBg === 'rgb(255, 255, 255)', [r.overflowX, r.htmlBg]);
+      check('no sideways scrolling; html paints its own background', r.overflowX === 0 && r.htmlBg === 'rgb(0, 0, 0)', [r.overflowX, r.htmlBg]);
       check('no script errors or CSP violations', problems.errors.length === 0 && ((await page.evaluate(() => window.__viol || [])).length === 0), [problems.errors, await page.evaluate(() => window.__viol)]);
       await browser.close();
     }
@@ -68,11 +74,11 @@ module.exports = async function run(pw) {
       const r = await page.evaluate(async () => {
         const $ = (id) => document.getElementById(id), f = $('f'), setup = $('setup'), gear = $('gear'), out = {};
         const state = () => ({ setup: !setup.hidden, form: !f.hidden, gear: gear.textContent });
-        gear.click(); out.open = state(); $('cfgClose').click(); out.closedByButton = state();
+        gear.click(); out.open = state(); gear.click(); out.closedByButton = state();
         gear.click(); gear.click(); out.closedByTopButton = state();
         gear.click(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); out.closedByEscape = state();
-        gear.click(); $('cfgPrefix').value = '[Never saved]'; $('cfgPresets').value = '1:00'; $('cfgClose').click(); gear.click();
-        out.discarded = { prefix: $('cfgPrefix').value, lines: $('cfgPresets').value.split('\n').length }; $('cfgClose').click();
+        gear.click(); $('cfgPrefix').value = '[Never saved]'; $('cfgPresets').value = '1:00'; gear.click(); gear.click();
+        out.discarded = { prefix: $('cfgPrefix').value, lines: $('cfgPresets').value.split('\n').length }; gear.click();
         // bad input is rejected and nothing is saved
         gear.click(); $('cfgPresets').value = '8:30\nlunch'; setup.requestSubmit(); out.badLine = { msg: $('cfgMsg').textContent, stored: localStorage.getItem('qr_presets'), stillOpen: !setup.hidden };
         $('cfgUrl').value = 'https://evil.example/x'; $('cfgPresets').value = '8:30'; setup.requestSubmit(); out.badHost = $('cfgMsg').textContent;
@@ -128,7 +134,7 @@ module.exports = async function run(pw) {
         await go('https://a.example/x', '', () => rel.ok({ ok: true, status: 'Sent' })); out.link = reqs[reqs.length - 1].body.subject; await wait(3100);
         return out;
       });
-      check('sending shows "Sending…" (button disabled), then "Sent ✓" in green, clears the form, returns to "Send" after 3 s', r.sending.text === 'Sending…' && r.sending.disabled && r.sent.btn === 'Sent ✓' && r.sent.done && r.sent.green === 'rgb(30, 142, 78)' && r.sent.subject === '' && r.reset.text === 'Send' && !r.reset.done, r);
+      check('sending shows "Sending…" (button disabled), then "Sent ✓" in green, clears the form, returns to "Send" after 3 s', r.sending.text === 'Sending…' && r.sending.disabled && r.sent.btn === 'Sent ✓' && r.sent.done && r.sent.green === 'rgb(111, 207, 151)' && r.sent.subject === '' && r.reset.text === 'Send' && !r.reset.done, r);
       check('payload: token in the body (not the URL), text/plain, subject only, recipient, no time for "Now"', r.payload.token === 30 && !r.payload.tokenInUrl && /^text\/plain/.test(r.payload.type) && r.payload.subject === 'Call dentist' && r.payload.body === '' && r.payload.target === 'work' && r.payload.sendAt === '', r.payload);
       check('a time button sends an ISO time and shows "Scheduled ✓"', r.scheduled.text === 'Scheduled ✓' && r.scheduled.sendAt, r.scheduled);
       check('failure messages: server error, non-JSON reply, timeout, no connection', r.errors.server === 'Unauthorized' && /^Unexpected reply\. Not confirmed/.test(r.errors.nonJson) && /^Timed out\. Not confirmed/.test(r.errors.timeout) && r.errors.network === 'No connection. Not sent.', r.errors);
@@ -177,7 +183,7 @@ module.exports = async function run(pw) {
       const meta = await page.evaluate(() => ({ labels: [...document.querySelectorAll('.wheel-item')].map((e) => e.textContent), start: Wheel.startIndex(Date.now()), tmrw: [...document.querySelectorAll('.wheel-item.tmrw')].length, aria: document.getElementById('wheelTrack').getAttribute('aria-label'), widthOk: Math.round(document.querySelector('.wheel-item').getBoundingClientRect().width) }));
       check('wheel: 16 hours from 7 AM to 10 PM, in a labelled listbox', meta.labels.length === 16 && meta.labels[0] === '7 AM' && meta.labels[5] === '12 PM' && meta.labels[15] === '10 PM' && /7 AM to 10 PM/.test(meta.aria), meta);
       check('wheel: rests dimmed on the next hour, nothing selected, no vibration at load', !s0.active && s0.on === meta.start && s0.hint === 'Will send immediately' && s0.chip === 'now' && s0.vib.length === 0, s0);
-      await page.evaluate(() => { const t = document.getElementById('wheelTrack'); t.scrollLeft = t.scrollLeft > 200 ? t.scrollLeft - 192 : t.scrollLeft + 192; });
+      await page.evaluate(() => { const t = document.getElementById('wheelTrack'); t.scrollLeft = t.scrollLeft > 200 ? t.scrollLeft - 144 : t.scrollLeft + 144; });
       await page.waitForTimeout(500);
       const s1 = await state();
       check('wheel: a script-driven scroll (no touch) neither selects nor vibrates', !s1.active && s1.vib.length === 0 && s1.hint === 'Will send immediately', s1);
@@ -185,7 +191,7 @@ module.exports = async function run(pw) {
       await page.waitForTimeout(300);
 
       // --- a real swipe: 3 hours, one tick each, selects after it settles ---
-      const startIdx = (await state()).on, dir = startIdx > 7 ? 192 : -192, wantIdx = startIdx + (dir > 0 ? -3 : 3); // finger right = earlier hours
+      const iw = await page.evaluate(() => document.querySelector('.wheel-item').offsetWidth), startIdx = (await state()).on, dir = startIdx > 7 ? 3 * iw : -3 * iw, wantIdx = startIdx + (dir > 0 ? -3 : 3); // finger right = earlier hours
       await clearVib(); await swipe(dir);
       const s2 = await state();
       check('wheel: swiping 3 hours selects that hour; chips deselect; hint shows the time', s2.active && s2.on === wantIdx && s2.checked === 0 && /^Will send: /.test(s2.hint), { startIdx, wantIdx, s2 });
@@ -256,7 +262,7 @@ module.exports = async function run(pw) {
         window.__vib.length = 0; window.fetch = () => Promise.resolve({ json: () => Promise.resolve({ ok: true, status: 'Sent' }) });
         $('subject').value = 'quiet'; $('f').requestSubmit(); await wait(100); out.offSend = window.__vib.slice();
         $('gear').click(); window.__vib.length = 0; $('cfgBuzz').click(); out.testWhileOff = window.__vib.length; // the test ignores the switch
-        $('cfgClose').click();
+        $('gear').click();
         return out;
       });
       check('settings: vibration is on by default; "Test vibration" buzzes 150-80-150 and says so; "blocked" is reported', set.defaultChecked && /^Buzz sent\./.test(set.testOn.msg) && JSON.stringify(set.testOn.vib) === '[[150,80,150]]' && /blocked/.test(set.testBlocked), set);
@@ -363,7 +369,7 @@ module.exports = async function run(pw) {
         // one screen at a time
         $('gear').click(); out.settingsOver = vis(); $('schedBtn').click(); await wait(60); out.schedOver = vis();
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); out.escape = vis();
-        await open(); $('schedClose').click(); out.closeBtn = vis(); await open(); $('schedBtn').click(); out.topX = vis();
+        await open(); $('schedBtn').click(); out.closeBtn = vis(); await open(); $('schedBtn').click(); out.topX = vis();
         // refresh
         await open(); const n = calls.length; $('schedRefresh').click(); await wait(60); out.refresh = { requests: calls.length - n, last: calls[calls.length - 1].action, rows: rows().length };
         // cancel: two taps, the first only arms the button
@@ -381,15 +387,15 @@ module.exports = async function run(pw) {
         // cancel the last one: empty message; refresh keeps it empty
         first().click(); first().click(); await wait(120); out.last = { rows: rows().length, state: state() };
         $('schedRefresh').click(); await wait(80); out.emptyAfterRefresh = { rows: rows().length, state: state() };
-        $('schedClose').click();
+        $('schedBtn').click();
         // failures when loading
-        for (const m of ['net', 'abort', 'nonjson', 'locked', 'old', 'oldsend']) { window.__mode = m; await open(); out['load_' + m] = { state: state(), rows: rows().length, refreshEnabled: !$('schedRefresh').disabled }; $('schedClose').click(); }
+        for (const m of ['net', 'abort', 'nonjson', 'locked', 'old', 'oldsend']) { window.__mode = m; await open(); out['load_' + m] = { state: state(), rows: rows().length, refreshEnabled: !$('schedRefresh').disabled }; $('schedBtn').click(); }
         window.__mode = 'ok';
         // a slow, outdated reply must not overwrite the newer one
         window.__items = [{ id: 'idnewone01', at: now + 3600e3, target: 'work', subject: 'NEW list' }]; let releaseSlow;
         hold = (reply) => { hold = null; return new Promise((res) => { releaseSlow = () => res(Promise.resolve({ json: () => Promise.resolve({ ok: true, items: [{ id: 'idoldone01', at: now, target: 'work', subject: 'OLD list' }] }) })); }); };
         await open(); $('schedBtn').click(); await open(); await wait(80); releaseSlow(); await wait(80);
-        out.stale = rows().map((x) => x.sub); $('schedClose').click();
+        out.stale = rows().map((x) => x.sub); $('schedBtn').click();
         // no settings saved: opens the settings with a note, no request
         const keep = [localStorage.getItem('qr_url'), localStorage.getItem('qr_token')]; localStorage.removeItem('qr_url'); localStorage.removeItem('qr_token'); const c1 = calls.length;
         $('schedBtn').click(); await wait(60); out.noConfig = { vis: vis(), note: $('cfgMsg').textContent, requests: calls.length - c1 };
@@ -434,11 +440,40 @@ module.exports = async function run(pw) {
       } finally { await server2.close(); rmrf(dir2); }
     }
 
-    // ---------- dark mode paints a dark page ----------
+    // ---------- the page is exactly as tall as it needs to be (no spare pixels to scroll) + the screen info probe ----------
     {
-      const { browser, page } = await newPage(pw, base, { scheme: 'dark' });
-      const r = await page.evaluate(() => ({ html: getComputedStyle(document.documentElement).backgroundColor, body: getComputedStyle(document.body).backgroundColor }));
-      check('dark mode: html and body are black', r.html === 'rgb(0, 0, 0)' && r.body === 'rgb(0, 0, 0)', r);
+      const { browser, page, problems } = await newPage(pw, base);
+      const size = async (w, h) => { await page.setViewportSize({ width: w, height: h }); await page.waitForTimeout(150); return page.evaluate(() => ({ doc: document.documentElement.scrollHeight, win: window.innerHeight, content: Math.round(document.getElementById('f').getBoundingClientRect().bottom + window.scrollY + 16) })); };
+      const tall = [[412, 915], [412, 860], [412, 800], [390, 844], [360, 780], [412, 760]];
+      const fits = [];
+      for (const [w, h] of tall) { const r = await size(w, h); fits.push({ w, h, ...r, ok: r.doc === r.win }); }
+      check('the form never scrolls when it fits: the document is exactly as tall as the window at six phone sizes (no min-height:100dvh spill)', fits.every((x) => x.ok || x.content > x.win), fits);
+      const small = await size(412, 500);
+      check('when the window is too small the page still scrolls (the form is taller than 500 px)', small.doc > small.win, small);
+      // the hidden dvh/svh/lvh measuring sticks must not add height
+      await size(412, 915);
+      const withProbes = await page.evaluate(() => document.documentElement.scrollHeight);
+      const without = await page.evaluate(() => { document.querySelectorAll('.vhprobe').forEach((e) => e.remove()); return document.documentElement.scrollHeight; });
+      check('the measuring sticks do not change the page height', withProbes === without, [withProbes, without]);
+      // reload to get them back, then: settings show the screen numbers; a scroll of the FORM is recorded, one of the long settings page is not
+      await page.reload(); await page.waitForTimeout(400); await size(412, 500);
+      const info0 = await page.evaluate(() => { document.getElementById('gear').click(); const t = document.getElementById('cfgInfo').textContent; document.getElementById('gear').click(); return t; });
+      check('settings show window size, dvh, svh, lvh and "The form has not scrolled since launch."', /^Screen: window 412x500, dvh 500, svh 500, lvh 500\. The form has not scrolled since launch\.$/.test(info0), info0);
+      await page.evaluate(() => { document.getElementById('gear').click(); window.scrollTo(0, 30); }); await page.waitForTimeout(150); // scrolling the long settings page
+      const info1 = await page.evaluate(() => { document.getElementById('gear').click(); document.getElementById('gear').click(); const t = document.getElementById('cfgInfo').textContent; document.getElementById('gear').click(); return t; });
+      check('scrolling the settings page is not recorded as a form scroll', /has not scrolled since launch/.test(info1), info1);
+      await page.evaluate(() => window.scrollTo(0, 40)); await page.waitForTimeout(150);
+      const info2 = await page.evaluate(() => { document.getElementById('gear').click(); const t = document.getElementById('cfgInfo').textContent; document.getElementById('gear').click(); return t; });
+      check('a scroll of the form is recorded with scrollY, document height, window height and visual viewport', /^Screen: window 412x500, dvh 500, svh 500, lvh 500\. The form scrolled: y=40 of \d+ \(window 500, visual 500, after \d+ ms\)$/.test(info2), info2);
+      check('screen info: no script errors', problems.errors.length === 0, problems.errors);
+      await browser.close();
+    }
+
+    // ---------- the app is always dark, whatever the phone's light/dark mode says ----------
+    for (const scheme of ['light', 'dark']) {
+      const { browser, page } = await newPage(pw, base, { scheme });
+      const r = await page.evaluate(() => ({ html: getComputedStyle(document.documentElement).backgroundColor, body: getComputedStyle(document.body).backgroundColor, text: getComputedStyle(document.body).color, canvas: getComputedStyle(document.documentElement).colorScheme }));
+      check(`phone in ${scheme} mode: the page is still black with light text (always dark)`, r.html === 'rgb(0, 0, 0)' && r.body === 'rgb(0, 0, 0)' && r.text === 'rgb(241, 241, 241)' && r.canvas === 'dark', r);
       await browser.close();
     }
   } finally { await server.close(); rmrf(dir); }

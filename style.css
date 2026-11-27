@@ -1,13 +1,15 @@
-:root { --build:"71a3fe5a"; }
-:root { --bg:#fff; --fg:#1d1d1f; --muted:#6b7280; --accent:#1a73e8; --border:#d1d5db; --err:#d93025; --ok:#1e8e4e; }
-@media (prefers-color-scheme: dark) {
-  :root { --bg:#000; --fg:#f1f1f1; --muted:#9ca3af; --accent:#8ab4f8; --border:#3a3a3a; --err:#f28b82; --ok:#6fcf97; }
-}
+:root { --build:"a69424db"; }
+/* The app is ALWAYS dark on purpose. The manifest holds ONE launch colour and Android paints it around the page
+   (launch screen, status bar, the strip under the keyboard, behind the gesture handle). If the page changed with the
+   phone's light/dark mode, the two would differ and a light edge or flash would show. See README "Colours must match". */
+:root { --bg:#000; --fg:#f1f1f1; --muted:#9ca3af; --accent:#8ab4f8; --border:#3a3a3a; --err:#f28b82; --ok:#6fcf97; }
 * { box-sizing: border-box; }
 /* html paints the background itself (not only body), so nothing transparent shows through
    when the window resizes, e.g. while the keyboard slides up. */
-html { -webkit-text-size-adjust: 100%; background:var(--bg); color-scheme:light dark; }
-body { margin:0; min-height:100dvh; background:var(--bg); color:var(--fg);
+html { -webkit-text-size-adjust: 100%; background:var(--bg); color-scheme:dark; }
+/* No min-height:100dvh here: dvh can be a few pixels taller than the real window on Android (after a reload or
+   a system-bar change), which made the page scrollable although its content fits. */
+body { margin:0; background:var(--bg); color:var(--fg);
        font:clamp(16px, 4vw, 18px)/1.4 system-ui, sans-serif;
        padding:max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
                max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
@@ -32,12 +34,11 @@ h1 { font-size:1.25em; margin:0; }
 .ssub { grid-column:1; color:var(--muted); overflow-wrap:anywhere; }
 .scancel { grid-column:2; grid-row:1 / span 2; width:100%; min-height:44px; margin:0; padding:6px 8px; font-weight:600; font-size:.9em; line-height:1.2;
            background:transparent; color:var(--err); border:1px solid var(--border); }
-.scancel.arm { background:var(--err); color:#fff; border-color:var(--err); }
-@media (prefers-color-scheme: dark) { .scancel.arm { color:#000; } }
-.pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.8em; font-weight:600; color:#fff; background:var(--pc); --pc:#1a73e8; }
+.scancel.arm { background:var(--err); color:#000; border-color:var(--err); }
+.pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.8em; font-weight:600; color:#000;
+        background:color-mix(in srgb, var(--pc) 62%, white); --pc:#1a73e8; }
 .pill.work { --pc:#d9534f; }
 .pill.unknown { --pc:#6b7280; }
-@media (prefers-color-scheme: dark) { .pill { color:#000; background:color-mix(in srgb, var(--pc) 62%, white); } }
 #setup p { color:var(--muted); font-size:.9em; margin:0 0 12px; }
 #setup input { margin-bottom:8px; }
 #cfgPrefixHelp { margin:0 0 4px; }
@@ -49,6 +50,7 @@ button.secondary { background:transparent; color:var(--fg); border:1px solid var
 #cfgClear { margin-top:8px; background:transparent; color:var(--err); border:1px solid var(--border); }
 #cfgVersion { margin:16px 0 0; text-align:center; color:var(--muted); font-size:.85em; }
 #cfgVersion.err { color:var(--err); }
+#cfgInfo { margin:6px 0 0; text-align:center; color:var(--muted); font-size:.8em; overflow-wrap:anywhere; }
 #cfgMsg { min-height:1.4em; margin-top:12px; text-align:center; color:var(--muted); }
 textarea, input[type=text], input[type=url], input[type=password], input[type=datetime-local] {
   width:100%; min-height:48px; padding:12px; font:inherit; color:inherit; background:transparent;
@@ -65,20 +67,17 @@ input[type=datetime-local]::-webkit-date-and-time-value { text-align:center; }
 .seg { display:grid; gap:8px; }
 .seg.two { grid-template-columns:1fr 1fr; }
 .seg.chips { grid-template-columns:repeat(3, 1fr); }
-/* Buttons are plain until selected; a selected button turns solid in its own colour (--base). */
-.seg label { position:relative; --c:var(--base, #1a73e8); }
+/* Buttons are plain until selected; a selected button turns solid in its own colour (--base), lightened for the dark page. */
+.seg label { position:relative; --c:color-mix(in srgb, var(--base, #1a73e8) 62%, white); }
 .seg label.c-personal { --base:#1a73e8; }
 .seg label.c-work { --base:#d9534f; }
-@media (prefers-color-scheme: dark) { .seg label { --c:color-mix(in srgb, var(--base, #1a73e8) 62%, white); } }
 .seg input { position:absolute; opacity:0; inset:0; }
 .seg span { display:flex; align-items:center; justify-content:center; min-height:48px; padding:8px;
             text-align:center; border-radius:12px; border:1px solid var(--border); }
-.seg input:checked + span { background-color:var(--c); color:#fff; border-color:var(--c); }
-@media (prefers-color-scheme: dark) { .seg input:checked + span { color:#000; } }
+.seg input:checked + span { background-color:var(--c); color:#000; border-color:var(--c); }
 .seg input:focus-visible + span { outline:2px solid var(--c); outline-offset:2px; }
 /* Hour wheel: a snapping strip of hours under a fixed centre marker. Dim until the user picks an hour. */
-.wheel { position:relative; margin-top:12px; --iw:64px; --c:var(--accent); --cc:var(--c); }
-@media (prefers-color-scheme: dark) { .wheel { --cc:color-mix(in srgb, var(--c) 62%, white); } }
+.wheel { position:relative; margin-top:12px; --iw:48px; --c:var(--accent); --cc:color-mix(in srgb, var(--c) 62%, white); }
 .wheel-marker { position:absolute; left:50%; top:7px; bottom:7px; width:var(--iw); transform:translateX(-50%);
                 border-radius:10px; border:2px solid var(--border); transition:background-color .15s ease, border-color .15s ease; }
 .wheel.active .wheel-marker { background:var(--cc); border-color:var(--cc); }
@@ -91,11 +90,10 @@ input[type=datetime-local]::-webkit-date-and-time-value { text-align:center; }
 .wheel:has(.wheel-track:focus-visible) { outline:2px solid var(--accent); outline-offset:2px; border-radius:12px; }
 .wheel-track:focus { outline:none; }
 .wheel-item { position:relative; flex:0 0 var(--iw); scroll-snap-align:center; scroll-snap-stop:always; padding:16px 0;
-              text-align:center; font-weight:600; font-size:.95em; color:var(--muted); user-select:none; -webkit-user-select:none;
+              text-align:center; font-weight:600; font-size:.9em; color:var(--muted); user-select:none; -webkit-user-select:none;
               -webkit-tap-highlight-color:transparent; transition:transform .12s ease, color .12s ease; }
 .wheel-item.on { transform:scale(1.2); color:var(--fg); }
-.wheel.active .wheel-item.on { color:#fff; }
-@media (prefers-color-scheme: dark) { .wheel.active .wheel-item.on { color:#000; } }
+.wheel.active .wheel-item.on { color:#000; }
 /* small dot: this hour has already passed today, so it means tomorrow */
 .wheel-item.tmrw::after { content:''; position:absolute; bottom:8px; left:50%; width:4px; height:4px; margin-left:-2px; border-radius:50%; background:currentColor; opacity:.5; }
 @media (prefers-reduced-motion: reduce) { .wheel-item, .wheel-marker { transition:none; } }
@@ -109,8 +107,7 @@ input[type=datetime-local]::-webkit-date-and-time-value { text-align:center; }
 .dt:not(.filled) input:not(:focus)::-webkit-datetime-edit { opacity:0; }
 #when { margin-top:8px; font-size:.9em; color:var(--muted); min-height:1.4em; text-align:center; }
 button { width:100%; min-height:52px; margin:16px 0 0; padding:14px; font:inherit; font-weight:600;
-         color:#fff; background:var(--accent); border:0; border-radius:12px; }
-@media (prefers-color-scheme: dark) { button { color:#000; } }
+         color:#000; background:var(--accent); border:0; border-radius:12px; }
 button:disabled { opacity:.6; }
 /* The Send button turns green for a few seconds after a successful send. */
 #btn { transition:background-color .2s ease; }
@@ -118,3 +115,7 @@ button:disabled { opacity:.6; }
 #status { margin:12px 0 0; text-align:center; color:var(--muted); }
 #status:empty { display:none; }
 #status.err { color:var(--err); }
+/* Measuring sticks for the screen info in Settings (dvh / svh / lvh). position:fixed on purpose: a fixed box never
+   makes the page scrollable, an absolute one could. */
+.vhprobe { position:fixed; left:0; top:0; width:1px; visibility:hidden; pointer-events:none; }
+#vhD { height:100dvh; } #vhS { height:100svh; } #vhL { height:100lvh; }

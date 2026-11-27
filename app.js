@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var BUILD = '71a3fe5a'; // build stamp, written by tools/stamp.js
+  var BUILD = 'a69424db'; // build stamp, written by tools/stamp.js
 
   var f = document.getElementById('f'), st = document.getElementById('status'),
       btn = document.getElementById('btn'), at = document.getElementById('at'),
@@ -241,7 +241,7 @@
       cfgToken = document.getElementById('cfgToken'), cfgMsg = document.getElementById('cfgMsg'),
       cfgPresets = document.getElementById('cfgPresets'), cfgPrefix = document.getElementById('cfgPrefix'),
       cfgHaptics = document.getElementById('cfgHaptics'), gear = document.getElementById('gear'),
-      cfgVersion = document.getElementById('cfgVersion'), sched = document.getElementById('sched'), schedBtn = document.getElementById('schedBtn'),
+      cfgVersion = document.getElementById('cfgVersion'), cfgInfo = document.getElementById('cfgInfo'), sched = document.getElementById('sched'), schedBtn = document.getElementById('schedBtn'),
       schedList = document.getElementById('schedList'), schedState = document.getElementById('schedState'),
       schedRefresh = document.getElementById('schedRefresh');
   function loadCfg() {
@@ -272,6 +272,21 @@
     cfgVersion.className = same ? '' : 'err';
     cfgVersion.textContent = same ? 'Version ' + BUILD : 'Files are out of sync (page ' + page + ', script ' + BUILD + ', style ' + css + '). Close and reopen the app.';
   }
+  // Screen info for "why does the page scroll?": the window size next to the dvh / svh / lvh units, and the first
+  // scroll events of the FORM (not of the long settings page) with the numbers at that moment.
+  var scrollSeen = [];
+  window.addEventListener('scroll', function () {
+    if (f.hidden || scrollSeen.length >= 3) return;
+    var vv = window.visualViewport;
+    scrollSeen.push({ y: Math.round(window.scrollY * 10) / 10, doc: document.documentElement.scrollHeight, win: window.innerHeight, vv: vv ? Math.round(vv.height) : '?', t: Math.round(performance.now()) });
+  }, { passive: true });
+  function pxHeight(id) { var e = document.getElementById(id); return e ? Math.round(e.getBoundingClientRect().height) : '?'; }
+  function showInfo() {
+    var line = 'Screen: window ' + innerWidth + 'x' + innerHeight + ', dvh ' + pxHeight('vhD') + ', svh ' + pxHeight('vhS') + ', lvh ' + pxHeight('vhL') + '. ';
+    line += scrollSeen.length ? 'The form scrolled: ' + scrollSeen.map(function (s) { return 'y=' + s.y + ' of ' + s.doc + ' (window ' + s.win + ', visual ' + s.vv + ', after ' + s.t + ' ms)'; }).join('; ')
+                              : 'The form has not scrolled since launch.';
+    cfgInfo.textContent = line;
+  }
   function showSetup(note) {
     sched.hidden = true; setup.hidden = false; f.hidden = true; cfgMsg.textContent = note || '';
     var c = loadCfg(); cfgUrl.value = c ? c.url : ''; cfgToken.value = '';
@@ -280,7 +295,7 @@
     var pt = loadPresetText(); // a damaged saved value shows the defaults instead
     cfgPresets.value = pt !== null && Presets.fromText(pt).ok ? pt : Presets.DEFAULT_TEXT;
     cfgPrefix.value = prefix; cfgHaptics.checked = haptics;
-    showVersion(); setButtons();
+    showVersion(); showInfo(); setButtons();
     cfgUrl.focus();
   }
   function showForm() {
@@ -291,7 +306,6 @@
   // Close = back to the form, throwing away unsaved edits. Works on first run too.
   function closeSettings() { if (!setup.hidden || !sched.hidden) showForm(); }
   gear.addEventListener('click', function () { setup.hidden ? showSetup() : closeSettings(); });
-  document.getElementById('cfgClose').addEventListener('click', closeSettings);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSettings(); });
 
   // ---- Scheduled reminders: list what is still waiting on the server and cancel it ----
@@ -360,7 +374,6 @@
   }
   schedBtn.addEventListener('click', function () { sched.hidden ? showSched() : closeSettings(); });
   schedRefresh.addEventListener('click', loadSched);
-  document.getElementById('schedClose').addEventListener('click', closeSettings);
   setup.addEventListener('submit', function (e) {
     e.preventDefault();
     var url = cfgUrl.value.trim(), c = loadCfg(), token = cfgToken.value.trim() || (c && c.token) || '';

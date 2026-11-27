@@ -5,12 +5,11 @@
 <!-- Locks the page down: only its own files run, and the only server it may talk to is Google Apps Script.
      If sending ever stops working after Google changes hosts, see "Content-Security-Policy" in the README. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
-<meta name="build" content="71a3fe5a">
+<meta name="build" content="a69424db">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- Status bar / window colours follow the phone theme and match the page background (no blue). -->
-<meta name="color-scheme" content="light dark">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+<!-- The app is always dark: launch screen, status bar and the page share ONE colour (see README "Colours must match"). -->
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
@@ -26,6 +25,7 @@
 <title>Quick Reminder</title>
 </head>
 <body>
+<div id="vhD" class="vhprobe" aria-hidden="true"></div><div id="vhS" class="vhprobe" aria-hidden="true"></div><div id="vhL" class="vhprobe" aria-hidden="true"></div>
 <main>
 <header>
   <h1>Quick Reminder</h1>
@@ -43,7 +43,6 @@
   <p id="schedState" role="status"></p>
   <ul id="schedList"></ul>
   <button type="button" id="schedRefresh" class="secondary">Refresh</button>
-  <button type="button" id="schedClose" class="secondary">Close</button>
 </section>
 
 <form id="setup" hidden autocomplete="off">
@@ -60,10 +59,10 @@
   <p id="cfgHelp">Examples: <code>8:30</code>, <code>3:00 pm</code>, <code>18:00</code> (next time it is that time), <code>+1h</code>, <code>+90m</code> (from now). Up to 8. "Now" is always first.</p>
   <button type="button" id="cfgReset" class="secondary">Reset time buttons to defaults</button>
   <button type="submit">Save</button>
-  <button type="button" id="cfgClose" class="secondary">Close without saving</button>
   <button type="button" id="cfgClear">Forget this phone's settings</button>
   <div id="cfgMsg" role="status"></div>
   <p id="cfgVersion"></p>
+  <p id="cfgInfo"></p>
 </form>
 
 <form id="f">

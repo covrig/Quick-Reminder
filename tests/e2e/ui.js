@@ -49,7 +49,7 @@ module.exports = async function run(pw) {
         return out;
       });
       check('nine time buttons in the default order', JSON.stringify(r.chips) === JSON.stringify(['Now', '8:30 AM', '9:30 AM', '3:00 PM', '6:00 PM', '7:00 PM', '1 h', '3 h', '6 h']), r.chips);
-      check('no "When" title above the time buttons', !r.labels.some((l) => l.trim() === 'When'), r.labels);
+      check('no "When" title and no "Or pick date and time" label (the field says it itself)', !r.labels.some((l) => /^\s*(When|Or pick date and time)\s*$/.test(l)), r.labels);
       check('defaults: Personal, Now, "Will send immediately"', r.defaults.recipient === 'personal' && r.defaults.chip === 'now' && r.defaults.hint === 'Will send immediately', r.defaults);
       check('only the selected time button is coloured (Now green, 6 PM its own colour, others plain)', r.nowBg === 'rgb(30, 142, 78)' && r.sel6pm === 'rgb(100, 151, 23)' && r.idleBg === 'rgba(0, 0, 0, 0)', [r.nowBg, r.sel6pm, r.idleBg]);
       check('recipient colours: Personal blue, Work red', r.personalBg === 'rgb(26, 115, 232)' && r.workBg === 'rgb(217, 83, 79)', [r.personalBg, r.workBg]);

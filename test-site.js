@@ -162,6 +162,24 @@ assert.strictEqual(xss.body, '<script>alert(1)</script>');
 assert.deepStrictEqual(U.parseLaunch('?%E0%A4%A', ids), {}, 'malformed query does not throw');
 assert.deepStrictEqual(U.parseLaunch('?title=%20%20&text=%20', ids), {}, 'blank values ignored');
 
+// --- launch colours: the manifest, the light theme-color meta and the light page background must be the same colour ---
+{
+  const fs = require('fs');
+  const norm = (c) => { c = c.trim().toLowerCase(); return c.length === 4 ? '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3] : c; };
+  const manifest = JSON.parse(fs.readFileSync(__dirname + '/manifest.webmanifest', 'utf8'));
+  const html = fs.readFileSync(__dirname + '/index.html', 'utf8'), css = fs.readFileSync(__dirname + '/style.css', 'utf8');
+  const metaLight = /<meta name="theme-color" media="\(prefers-color-scheme: light\)" content="(#[0-9a-fA-F]{3,6})">/.exec(html);
+  const metaDark = /<meta name="theme-color" media="\(prefers-color-scheme: dark\)" content="(#[0-9a-fA-F]{3,6})">/.exec(html);
+  const bgLight = /:root\s*\{[^}]*--bg:\s*(#[0-9a-fA-F]{3,6})/.exec(css);
+  const bgDark = /prefers-color-scheme: dark\)\s*\{\s*:root\s*\{[^}]*--bg:\s*(#[0-9a-fA-F]{3,6})/.exec(css);
+  assert.ok(metaLight && metaDark && bgLight && bgDark, 'theme-color metas and --bg values must be found');
+  assert.strictEqual(norm(manifest.theme_color), norm(metaLight[1]), 'manifest theme_color must equal the light theme-color meta');
+  assert.strictEqual(norm(manifest.background_color), norm(bgLight[1]), 'manifest background_color must equal the light page background');
+  assert.strictEqual(norm(metaLight[1]), norm(bgLight[1]), 'light theme-color meta must equal the light page background');
+  assert.strictEqual(norm(metaDark[1]), norm(bgDark[1]), 'dark theme-color meta must equal the dark page background');
+  assert.ok(!/for="at"/.test(html) && /id="at"[^>]*aria-label="Pick date and time"/.test(html), 'the date field has no visible label but an accessible name');
+}
+
 // --- sanitizePrefix ---
 assert.strictEqual(U.sanitizePrefix('[Reminder]'), '[Reminder]');
 assert.strictEqual(U.sanitizePrefix('  [Update]  '), '[Update]');
